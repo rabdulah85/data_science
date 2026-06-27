@@ -163,7 +163,7 @@ if "Home" in page:
         fig.update_layout(height=420, margin=dict(l=5,r=5,t=10,b=10),
                           coloraxis_showscale=False, paper_bgcolor="white", plot_bgcolor="white")
         buf = fig.to_html(full_html=True, include_plotlyjs='cdn')
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
         st.download_button("⬇️ Download Bar Chart (HTML)", buf,
                            f"gdp_province_{tahun_sel}.html", "text/html")
     with c2:
@@ -175,7 +175,7 @@ if "Home" in page:
                            legend_title_text="Island", paper_bgcolor="white")
         fig2.update_traces(textposition='inside', textinfo='percent+label')
         buf2 = fig2.to_html(full_html=True, include_plotlyjs='cdn')
-        st.plotly_chart(fig2, use_container_width=True)
+        st.plotly_chart(fig2, width='stretch')
         st.download_button("⬇️ Download Pie Chart (HTML)", buf2,
                            f"gdp_island_{tahun_sel}.html", "text/html")
 
@@ -217,7 +217,7 @@ elif "Map" in page:
         coloraxis_colorbar=dict(title=label_color, thickness=14, len=0.6),
         paper_bgcolor="white"
     )
-    st.plotly_chart(fig_map, use_container_width=True)
+    st.plotly_chart(fig_map, width='stretch')
     buf_map = fig_map.to_html(full_html=True, include_plotlyjs='cdn')
     st.download_button("⬇️ Download Map (HTML)", buf_map, f"gdp_map_{tahun_sel}.html", "text/html")
 
@@ -249,7 +249,7 @@ elif "Time" in page:
         fig.update_layout(height=460, hovermode="x unified",
                           paper_bgcolor="white", plot_bgcolor="white",
                           legend=dict(orientation="h", yanchor="bottom", y=-0.35))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
         buf_ts = fig.to_html(full_html=True, include_plotlyjs='cdn')
         st.download_button("⬇️ Download Time Series (HTML)", buf_ts, "gdp_timeseries.html", "text/html")
 
@@ -265,7 +265,7 @@ elif "Time" in page:
         fig3.update_layout(height=380, xaxis_tickangle=-35,
                            paper_bgcolor="white", plot_bgcolor="white",
                            legend_title_text="Province", margin=dict(b=80))
-        st.plotly_chart(fig3, use_container_width=True)
+        st.plotly_chart(fig3, width='stretch')
 
 # ── RANKING ───────────────────────────────────
 elif "Ranking" in page:
@@ -277,7 +277,7 @@ elif "Ranking" in page:
                   color_discrete_sequence=px.colors.qualitative.Set2)
     fig4.update_layout(height=520, margin=dict(l=5,r=5,t=10,b=10),
                        paper_bgcolor="white", plot_bgcolor="white")
-    st.plotly_chart(fig4, use_container_width=True)
+    st.plotly_chart(fig4, width='stretch')
     buf4 = fig4.to_html(full_html=True, include_plotlyjs='cdn')
     st.download_button("⬇️ Download Ranking Chart (HTML)", buf4,
                        f"gdp_ranking_{tahun_sel}.html", "text/html")
@@ -292,7 +292,7 @@ elif "Ranking" in page:
                       color_discrete_sequence=px.colors.qualitative.Set2, opacity=0.75)
     fig5.update_layout(height=420, legend_title_text="Island",
                        paper_bgcolor="white", plot_bgcolor="white")
-    st.plotly_chart(fig5, use_container_width=True)
+    st.plotly_chart(fig5, width='stretch')
 
 # ── DATA ──────────────────────────────────────
 elif "Data" in page:
@@ -303,6 +303,6 @@ elif "Data" in page:
     if search:
         df_show = df_show[df_show["district_en"].str.contains(search, case=False)]
     df_show.columns = ["District","Province","Island"] + [str(y) for y in gdp_years]
-    st.dataframe(df_show.reset_index(drop=True), use_container_width=True, height=450)
+    st.dataframe(df_show.reset_index(drop=True), width='stretch', height=450)
     csv = df_show.to_csv(index=False).encode("utf-8")
     st.download_button("⬇️ Download CSV", csv, f"gdp_indonesia_{tahun_sel}.csv", "text/csv")
