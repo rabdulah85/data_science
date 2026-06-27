@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import json, urllib.request
+import numpy as np
 
 # ─────────────────────────────────────────────
 # PAGE CONFIG
@@ -15,33 +16,54 @@ st.set_page_config(
 )
 
 # ─────────────────────────────────────────────
-# CSS
+# CSS — LIGHT THEME
 # ─────────────────────────────────────────────
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=DM+Serif+Display&display=swap');
-    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+
+    html, body, [class*="css"], .stApp {
+        font-family: 'Inter', sans-serif;
+        background-color: #f7f9fc !important;
+        color: #1a2b3c !important;
+    }
+    section[data-testid="stSidebar"] {
+        background-color: #ffffff !important;
+        border-right: 1px solid #e2e8f0;
+    }
+    section[data-testid="stSidebar"] * { color: #1a2b3c !important; }
+
     .main-header {
         background: linear-gradient(135deg, #1a3a5c 0%, #0f6b8a 100%);
         padding: 1.8rem 2.5rem; border-radius: 12px;
-        margin-bottom: 1.5rem; color: white;
+        margin-bottom: 1.5rem;
     }
-    .main-header h1 { font-family: 'DM Serif Display', serif; font-size: 1.9rem; margin: 0 0 0.3rem 0; color: white; }
-    .main-header p  { font-size: 0.85rem; opacity: 0.8; margin: 0; color: #cde8f0; }
+    .main-header h1 {
+        font-family: 'DM Serif Display', serif;
+        font-size: 1.9rem; margin: 0 0 0.3rem 0; color: white;
+    }
+    .main-header p { font-size: 0.85rem; opacity: 0.8; margin: 0; color: #cde8f0; }
+
     .kpi-card {
-        background: white; border: 1px solid #e8edf2;
+        background: white; border: 1px solid #e2e8f0;
         border-radius: 10px; padding: 1.1rem 1.2rem;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.04); text-align: center;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05); text-align: center;
     }
-    .kpi-label { font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
-        letter-spacing: 0.08em; color: #6b7c93; margin-bottom: 0.3rem; }
+    .kpi-label {
+        font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+        letter-spacing: 0.08em; color: #6b7c93; margin-bottom: 0.3rem;
+    }
     .kpi-value { font-size: 1.7rem; font-weight: 700; color: #1a3a5c; line-height: 1.1; }
     .kpi-sub   { font-size: 0.75rem; color: #2ca86e; margin-top: 0.2rem; }
+
     .section-title {
         font-size: 0.95rem; font-weight: 600; color: #1a3a5c;
         border-left: 3px solid #0f6b8a; padding-left: 0.75rem;
         margin: 1.5rem 0 0.8rem 0;
     }
+    /* Force plotly chart backgrounds white */
+    .js-plotly-plot { background: white !important; border-radius: 8px; }
+
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
@@ -71,8 +93,8 @@ def load_geojson():
     return geo
 
 df, df_long = load_data()
-geojson    = load_geojson()
-gdp_years  = sorted([int(c.replace("gdp_","")) for c in df.columns if c.startswith("gdp_")])
+geojson   = load_geojson()
+gdp_years = sorted([int(c.replace("gdp_","")) for c in df.columns if c.startswith("gdp_")])
 
 # ─────────────────────────────────────────────
 # SIDEBAR
@@ -84,15 +106,25 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### ⚙️ Filter")
 
-    pulau_list = ["Semua"] + sorted(df["island_en"].dropna().unique().tolist())
-    pulau = st.selectbox("Island", pulau_list)
+    # Island filter
+    island_list = ["All"] + sorted(df["island_en"].dropna().unique().tolist())
+    island_sel = st.selectbox("Island", island_list)
 
-    if pulau != "All":
-        prov_list = sorted(df[df["island_en"]==pulau]["province_en"].unique().tolist())
+    # Province filter — depends on island
+    if island_sel != "All":
+        prov_options = sorted(df[df["island_en"] == island_sel]["province_en"].unique().tolist())
     else:
-        prov_list = sorted(df["province_en"].unique().tolist())
+        prov_options = sorted(df["province_en"].unique().tolist())
+    prov_sel = st.multiselect("Province", prov_options, default=prov_options[:5])
 
-    prov_sel = st.multiselect("Province", prov_list, default=prov_list[:5])
+    # District filter — depends on province
+    if prov_sel:
+        dist_options = sorted(df[df["province_en"].isin(prov_sel)]["district_en"].unique().tolist())
+    else:
+        dist_options = sorted(df["district_en"].unique().tolist())
+    dist_sel = st.multiselect("District", dist_options, default=[])
+
+    # Year slider
     tahun_sel = st.select_slider("Year", options=gdp_years, value=2024)
 
     st.markdown("---")
@@ -100,11 +132,29 @@ with st.sidebar:
                 unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# FILTER
+# APPLY FILTERS
 # ─────────────────────────────────────────────
-col_gdp   = f"gdp_{tahun_sel}"
-df_fil    = df[df["province_en"].isin(prov_sel)].copy() if prov_sel else df.copy()
-df_long_f = df_long[df_long["province_en"].isin(prov_sel)] if prov_sel else df_long
+col_gdp = f"gdp_{tahun_sel}"
+
+# Cascading filter: island → province → district
+if dist_sel:
+    df_fil = df[df["district_en"].isin(dist_sel)].copy()
+elif prov_sel:
+    df_fil = df[df["province_en"].isin(prov_sel)].copy()
+elif island_sel != "All":
+    df_fil = df[df["island_en"] == island_sel].copy()
+else:
+    df_fil = df.copy()
+
+# Long format filter
+if dist_sel:
+    df_long_f = df_long[df_long["district_en"].isin(dist_sel)]
+elif prov_sel:
+    df_long_f = df_long[df_long["province_en"].isin(prov_sel)]
+elif island_sel != "All":
+    df_long_f = df_long[df_long["island_en"] == island_sel]
+else:
+    df_long_f = df_long
 
 # ─────────────────────────────────────────────
 # PAGE: HOME
@@ -121,7 +171,7 @@ if "Home" in page:
     tertinggi = df_fil.loc[df_fil[col_gdp].idxmax(), "district_en"]
     n_kab     = len(df_fil)
 
-    st.markdown('<p class="section-title">Indikator Utama</p>', unsafe_allow_html=True)
+    st.markdown('<p class="section-title">Key Indicators</p>', unsafe_allow_html=True)
     k1,k2,k3,k4 = st.columns(4)
     with k1:
         st.markdown(f"""<div class="kpi-card"><div class="kpi-label">Total GDP {tahun_sel}</div>
@@ -148,16 +198,25 @@ if "Home" in page:
         fig = px.bar(df_prov, x=col_gdp, y="province_en", orientation="h",
                      color=col_gdp, color_continuous_scale="Blues",
                      labels={col_gdp:"GDP (M Rp)","province_en":""}, template="plotly_white")
-        fig.update_layout(height=400, margin=dict(l=5,r=5,t=10,b=10), coloraxis_showscale=False)
+        fig.update_layout(height=420, margin=dict(l=5,r=5,t=10,b=10),
+                          coloraxis_showscale=False, paper_bgcolor="white", plot_bgcolor="white")
+        # Download button
+        buf = fig.to_html(full_html=True, include_plotlyjs='cdn')
         st.plotly_chart(fig, use_container_width=True)
+        st.download_button("⬇️ Download Bar Chart (HTML)", buf,
+                           f"gdp_province_{tahun_sel}.html", "text/html")
     with c2:
-        st.markdown('<p class="section-title">Share GDP per Island</p>', unsafe_allow_html=True)
-        df_pulau = df.groupby("island_en")[col_gdp].sum().reset_index()
+        st.markdown('<p class="section-title">GDP Share per Island</p>', unsafe_allow_html=True)
+        df_pulau = df_fil.groupby("island_en")[col_gdp].sum().reset_index()
         fig2 = px.pie(df_pulau, names="island_en", values=col_gdp, hole=0.45,
                       template="plotly_white", color_discrete_sequence=px.colors.sequential.Blues_r)
-        fig2.update_layout(height=400, margin=dict(l=5,r=5,t=10,b=10), legend_title_text="Island")
+        fig2.update_layout(height=380, margin=dict(l=5,r=5,t=10,b=10),
+                           legend_title_text="Island", paper_bgcolor="white")
         fig2.update_traces(textposition='inside', textinfo='percent+label')
+        buf2 = fig2.to_html(full_html=True, include_plotlyjs='cdn')
         st.plotly_chart(fig2, use_container_width=True)
+        st.download_button("⬇️ Download Pie Chart (HTML)", buf2,
+                           f"gdp_island_{tahun_sel}.html", "text/html")
 
 # ─────────────────────────────────────────────
 # PAGE: MAP
@@ -166,19 +225,16 @@ elif "Map" in page:
     st.markdown(f'<p class="section-title">🗺️ Choropleth Map of GDP by District — {tahun_sel}</p>',
                 unsafe_allow_html=True)
 
-    # Color scale selector
     col_opt, col_log = st.columns([3,1])
     with col_opt:
         skala_warna = st.selectbox("Color Scale", ["Blues","YlOrRd","Viridis","RdYlGn","Plasma"], index=0)
     with col_log:
         log_scale = st.checkbox("Log Scale", value=True,
-                                help="Log scale helps visualization due to large GDP disparities")      
+                                help="Recommended: large GDP disparity between districts")
 
-    # Prepare data — use full df for map (all 514), highlight filtered
-    df_map = df[["districtID","district_en","province_en","island_en", col_gdp]].copy()
+    df_map = df[["districtID","district_en","province_en","island_en",col_gdp]].copy()
     df_map["gdp_plot"] = df_map[col_gdp].clip(lower=1)
 
-    import numpy as np
     if log_scale:
         df_map["gdp_display"] = np.log10(df_map["gdp_plot"])
         label_color = f"Log10 GDP {tahun_sel}"
@@ -187,43 +243,28 @@ elif "Map" in page:
         label_color = f"GDP {tahun_sel} (M Rp)"
 
     fig_map = px.choropleth_mapbox(
-        df_map,
-        geojson=geojson,
-        locations="districtID",
-        featureidkey="properties.districtID",
-        color="gdp_display",
-        color_continuous_scale=skala_warna,
+        df_map, geojson=geojson,
+        locations="districtID", featureidkey="properties.districtID",
+        color="gdp_display", color_continuous_scale=skala_warna,
         mapbox_style="carto-positron",
-        zoom=3.8,
-        center={"lat": -2.5, "lon": 118},
-        opacity=0.75,
+        zoom=3.8, center={"lat": -2.5, "lon": 118}, opacity=0.75,
         hover_name="district_en",
-        hover_data={
-            "province_en": True,
-            "island_en": True,
-            col_gdp: ":,.0f",
-            "gdp_display": False,
-            "districtID": False
-        },
-        labels={
-            "gdp_display": label_color,
-            "province_en": "Province",
-            "island_en": "Island",
-            col_gdp: f"GDP {tahun_sel} (M Rp)"
-        }
+        hover_data={"province_en":True,"island_en":True,
+                    col_gdp:":,.0f","gdp_display":False,"districtID":False},
+        labels={"gdp_display":label_color,"province_en":"Province",
+                "island_en":"Island",col_gdp:f"GDP {tahun_sel} (M Rp)"}
     )
     fig_map.update_layout(
-        height=580,
-        margin=dict(l=0, r=0, t=0, b=0),
-        coloraxis_colorbar=dict(
-            title=label_color,
-            thickness=14,
-            len=0.6
-        )
+        height=560, margin=dict(l=0,r=0,t=0,b=0),
+        coloraxis_colorbar=dict(title=label_color, thickness=14, len=0.6),
+        paper_bgcolor="white"
     )
     st.plotly_chart(fig_map, use_container_width=True)
 
-    # Summary stats below map
+    buf_map = fig_map.to_html(full_html=True, include_plotlyjs='cdn')
+    st.download_button("⬇️ Download Map (HTML)", buf_map,
+                       f"gdp_map_{tahun_sel}.html", "text/html")
+
     st.markdown('<p class="section-title">Summary Statistics</p>', unsafe_allow_html=True)
     s1,s2,s3,s4 = st.columns(4)
     with s1:
@@ -239,53 +280,68 @@ elif "Map" in page:
         st.metric("Max/Min Ratio", f"{ratio:,.0f}x", "Disparity Measure")
 
 # ─────────────────────────────────────────────
-# PAGE: TREN WAKTU
+# PAGE: TIME SERIES
 # ─────────────────────────────────────────────
-elif "Tren" in page:
+elif "Time" in page:
     st.markdown('<p class="section-title">📈 GDP Trend per Province (2010–2025)</p>', unsafe_allow_html=True)
-    if not prov_sel:
-        st.warning("Select at least 1 province in the sidebar.")
+
+    if df_long_f.empty:
+        st.warning("No data — adjust filters in the sidebar.")
     else:
         df_trend = df_long_f.groupby(["tahun","province_en"])["gdp"].sum().reset_index()
         fig = px.line(df_trend, x="tahun", y="gdp", color="province_en", markers=True,
-                      labels={"gdp":"GDP (M Rp)","tahun":"Tahun","province_en":"Province"},
-                      template="plotly_white", color_discrete_sequence=px.colors.qualitative.Set2)
+                      labels={"gdp":"GDP (M Rp)","tahun":"Year","province_en":"Province"},
+                      template="plotly_white",
+                      color_discrete_sequence=px.colors.qualitative.Set2)
         fig.update_layout(height=460, hovermode="x unified",
-                          legend=dict(orientation="h", yanchor="bottom", y=-0.3))
+                          paper_bgcolor="white", plot_bgcolor="white",
+                          legend=dict(orientation="h", yanchor="bottom", y=-0.35))
         st.plotly_chart(fig, use_container_width=True)
+        buf_ts = fig.to_html(full_html=True, include_plotlyjs='cdn')
+        st.download_button("⬇️ Download Time Series (HTML)", buf_ts,
+                           "gdp_timeseries.html", "text/html")
 
     st.markdown('<p class="section-title">GDP Growth 2010 → 2025 (Top 20 Districts)</p>', unsafe_allow_html=True)
-    df_growth = df_fil[["district_en","province_en","gdp_2010","gdp_2025"]].copy()
-    df_growth["growth_pct"] = ((df_growth["gdp_2025"]-df_growth["gdp_2010"])/df_growth["gdp_2010"]*100).round(1)
-    df_growth = df_growth.sort_values("growth_pct", ascending=False).head(20)
-    fig3 = px.bar(df_growth, x="district_en", y="growth_pct", color="province_en",
-                  template="plotly_white",
-                  labels={"growth_pct":"Growth (%)","district_en":"District","province_en":"Province"},
-                  color_discrete_sequence=px.colors.qualitative.Set2)
-    fig3.update_layout(height=380, xaxis_tickangle=-35, legend_title_text="Province", margin=dict(b=80))
-    st.plotly_chart(fig3, use_container_width=True)
+    if not df_fil.empty:
+        df_growth = df_fil[["district_en","province_en","gdp_2010","gdp_2025"]].copy()
+        df_growth["growth_pct"] = ((df_growth["gdp_2025"]-df_growth["gdp_2010"])/df_growth["gdp_2010"]*100).round(1)
+        df_growth = df_growth.sort_values("growth_pct", ascending=False).head(20)
+        fig3 = px.bar(df_growth, x="district_en", y="growth_pct", color="province_en",
+                      template="plotly_white",
+                      labels={"growth_pct":"Growth (%)","district_en":"District","province_en":"Province"},
+                      color_discrete_sequence=px.colors.qualitative.Set2)
+        fig3.update_layout(height=380, xaxis_tickangle=-35,
+                           paper_bgcolor="white", plot_bgcolor="white",
+                           legend_title_text="Province", margin=dict(b=80))
+        st.plotly_chart(fig3, use_container_width=True)
 
 # ─────────────────────────────────────────────
 # PAGE: RANKING
 # ─────────────────────────────────────────────
 elif "Ranking" in page:
     st.markdown(f'<p class="section-title">🏆 Top 20 Districts — GDP {tahun_sel}</p>', unsafe_allow_html=True)
-    top20 = df_fil.nlargest(20, col_gdp)[["district_en","province_en","island_en    ",col_gdp]].copy()
+    top20 = df_fil.nlargest(20, col_gdp)[["district_en","province_en","island_en",col_gdp]].copy()
     fig4 = px.bar(top20.sort_values(col_gdp), x=col_gdp, y="district_en",
-                  color="island_en    ", orientation="h", template="plotly_white",
-                  labels={col_gdp:f"GDP {tahun_sel} (M Rp)","district_en":"","island_en    ":"Island"},
+                  color="island_en", orientation="h", template="plotly_white",
+                  labels={col_gdp:f"GDP {tahun_sel} (M Rp)","district_en":"","island_en":"Island"},
                   color_discrete_sequence=px.colors.qualitative.Set2)
-    fig4.update_layout(height=520, margin=dict(l=5,r=5,t=10,b=10))
+    fig4.update_layout(height=520, margin=dict(l=5,r=5,t=10,b=10),
+                       paper_bgcolor="white", plot_bgcolor="white")
     st.plotly_chart(fig4, use_container_width=True)
+    buf4 = fig4.to_html(full_html=True, include_plotlyjs='cdn')
+    st.download_button("⬇️ Download Ranking Chart (HTML)", buf4,
+                       f"gdp_ranking_{tahun_sel}.html", "text/html")
 
-    st.markdown('<p class="section-title">Scatter: GDP vs Pertumbuhan 2010–2025</p>', unsafe_allow_html=True)
+    st.markdown('<p class="section-title">Scatter: GDP vs Growth 2010–2025</p>', unsafe_allow_html=True)
     df_sc = df_fil[["district_en","province_en","island_en","gdp_2010",col_gdp]].copy()
     df_sc["growth"] = ((df_sc[col_gdp]-df_sc["gdp_2010"])/df_sc["gdp_2010"]*100).round(1)
     fig5 = px.scatter(df_sc, x=col_gdp, y="growth", color="island_en",
                       hover_name="district_en", hover_data={"province_en":True},
                       labels={col_gdp:f"GDP {tahun_sel} (M Rp)","growth":"Growth 2010–2025 (%)"},
-                      template="plotly_white", color_discrete_sequence=px.colors.qualitative.Set2, opacity=0.75)
-    fig5.update_layout(height=420, legend_title_text="Island", margin=dict(l=5,r=5,t=10,b=10)   )
+                      template="plotly_white",
+                      color_discrete_sequence=px.colors.qualitative.Set2, opacity=0.75)
+    fig5.update_layout(height=420, legend_title_text="Island",
+                       paper_bgcolor="white", plot_bgcolor="white")
     st.plotly_chart(fig5, use_container_width=True)
 
 # ─────────────────────────────────────────────
