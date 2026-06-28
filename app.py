@@ -425,7 +425,14 @@ elif "Convergence" in page:
                           template="plotly_white",
                           color_discrete_sequence=px.colors.qualitative.Set2,
                           opacity=0.65)
-    fig_beta.update_layout(height=460, paper_bgcolor="white", plot_bgcolor="white", font=dict(color="#1a2b3c"))
+    fig_beta.update_layout(height=460, paper_bgcolor="white", plot_bgcolor="white",
+                       font=dict(color="#1a2b3c"),
+                       hoverlabel=dict(
+                           bgcolor="white",
+                           font_color="#1a2b3c",
+                           font_size=12,
+                           bordercolor="#e2e8f0"
+                       ))
     st.plotly_chart(fig_beta, use_container_width=True)
 
     # OLS result
