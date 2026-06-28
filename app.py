@@ -141,8 +141,7 @@ with st.sidebar:
         prov_options = sorted(df[df["island_en"] == island_sel]["province_en"].unique().tolist())
     else:
         prov_options = sorted(df["province_en"].unique().tolist())
-    prov_sel = st.multiselect("Province", prov_options, default=prov_options[:5])
-
+    prov_sel = st.multiselect("Province", prov_options, default=prov_options)
     if prov_sel:
         dist_options = sorted(df[df["province_en"].isin(prov_sel)]["district_en"].unique().tolist())
     else:
@@ -321,8 +320,11 @@ elif "Ranking" in page:
                   color="island_en", orientation="h", template="plotly_white",
                   labels={col_gdp:f"GDP {tahun_sel} (M Rp)","district_en":"","island_en":"Island"},
                   color_discrete_sequence=px.colors.qualitative.Set2)
-    fig4.update_layout(height=520, margin=dict(l=5,r=5,t=10,b=10), paper_bgcolor="white", plot_bgcolor="white", font=dict(color="#1a2b3c"))
-    st.plotly_chart(fig4, use_container_width=True)
+   fig4.update_layout(height=520, margin=dict(l=5,r=5,t=10,b=10),
+                   paper_bgcolor="white", plot_bgcolor="white",
+                   font=dict(color="#1a2b3c"),
+                   hoverlabel=dict(bgcolor="white", font_color="#1a2b3c",
+                                    font_size=12, bordercolor="#e2e8f0"))
     buf4 = fig4.to_html(full_html=True, include_plotlyjs='cdn')
     st.download_button("⬇️ Download Ranking Chart (HTML)", buf4, f"gdp_ranking_{tahun_sel}.html", "text/html")
 
