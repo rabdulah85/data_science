@@ -60,9 +60,16 @@ st.markdown("""
         color: white !important;
         background-color: transparent !important;
     }
-    /* Fix chart title text */
-    .js-plotly-plot .plotly .gtitle {
+    /* Fix chart text — axis labels, ticks, titles */
+    .js-plotly-plot .plotly .gtitle,
+    .js-plotly-plot .plotly .xtitle,
+    .js-plotly-plot .plotly .ytitle,
+    .js-plotly-plot .plotly .xtick text,
+    .js-plotly-plot .plotly .ytick text,
+    .js-plotly-plot .plotly .legendtext,
+    .js-plotly-plot .plotly text {
         fill: #1a2b3c !important;
+        color: #1a2b3c !important;
     }
     /* Info/warning boxes */
     [data-testid="stAlert"] {
@@ -208,7 +215,7 @@ if "Home" in page:
                      color=col_gdp, color_continuous_scale="Blues",
                      labels={col_gdp:"GDP (M Rp)","province_en":""}, template="plotly_white")
         fig.update_layout(height=420, margin=dict(l=5,r=5,t=10,b=10),
-                          coloraxis_showscale=False, paper_bgcolor="white", plot_bgcolor="white")
+                          coloraxis_showscale=False, paper_bgcolor="white", plot_bgcolor="white", font=dict(color="#1a2b3c"))
         buf = fig.to_html(full_html=True, include_plotlyjs='cdn')
         st.plotly_chart(fig, use_container_width=True)
         st.download_button("⬇️ Download Bar Chart (HTML)", buf,
@@ -287,6 +294,7 @@ elif "Time" in page:
                       labels={"gdp":"GDP (M Rp)","tahun":"Year","province_en":"Province"},
                       template="plotly_white", color_discrete_sequence=px.colors.qualitative.Set2)
         fig.update_layout(height=460, hovermode="x unified", paper_bgcolor="white", plot_bgcolor="white",
+                          font=dict(color="#1a2b3c"),
                           legend=dict(orientation="h", yanchor="bottom", y=-0.35))
         st.plotly_chart(fig, use_container_width=True)
         buf_ts = fig.to_html(full_html=True, include_plotlyjs='cdn')
@@ -302,6 +310,7 @@ elif "Time" in page:
                       labels={"growth_pct":"Growth (%)","district_en":"District","province_en":"Province"},
                       color_discrete_sequence=px.colors.qualitative.Set2)
         fig3.update_layout(height=380, xaxis_tickangle=-35, paper_bgcolor="white", plot_bgcolor="white",
+                           font=dict(color="#1a2b3c"),
                            legend_title_text="Province", margin=dict(b=80))
         st.plotly_chart(fig3, use_container_width=True)
 
@@ -312,7 +321,7 @@ elif "Ranking" in page:
                   color="island_en", orientation="h", template="plotly_white",
                   labels={col_gdp:f"GDP {tahun_sel} (M Rp)","district_en":"","island_en":"Island"},
                   color_discrete_sequence=px.colors.qualitative.Set2)
-    fig4.update_layout(height=520, margin=dict(l=5,r=5,t=10,b=10), paper_bgcolor="white", plot_bgcolor="white")
+    fig4.update_layout(height=520, margin=dict(l=5,r=5,t=10,b=10), paper_bgcolor="white", plot_bgcolor="white", font=dict(color="#1a2b3c"))
     st.plotly_chart(fig4, use_container_width=True)
     buf4 = fig4.to_html(full_html=True, include_plotlyjs='cdn')
     st.download_button("⬇️ Download Ranking Chart (HTML)", buf4, f"gdp_ranking_{tahun_sel}.html", "text/html")
@@ -324,7 +333,7 @@ elif "Ranking" in page:
                       hover_name="district_en", hover_data={"province_en":True},
                       labels={col_gdp:f"GDP {tahun_sel} (M Rp)","growth":"Growth 2010–2025 (%)"},
                       template="plotly_white", color_discrete_sequence=px.colors.qualitative.Set2, opacity=0.75)
-    fig5.update_layout(height=420, legend_title_text="Island", paper_bgcolor="white", plot_bgcolor="white")
+    fig5.update_layout(height=420, legend_title_text="Island", paper_bgcolor="white", plot_bgcolor="white", font=dict(color="#1a2b3c"))
     st.plotly_chart(fig5, use_container_width=True)
 
 
@@ -416,7 +425,7 @@ elif "Convergence" in page:
                           template="plotly_white",
                           color_discrete_sequence=px.colors.qualitative.Set2,
                           opacity=0.65)
-    fig_beta.update_layout(height=460, paper_bgcolor="white", plot_bgcolor="white")
+    fig_beta.update_layout(height=460, paper_bgcolor="white", plot_bgcolor="white", font=dict(color="#1a2b3c"))
     st.plotly_chart(fig_beta, use_container_width=True)
 
     # OLS result
@@ -450,7 +459,7 @@ elif "Convergence" in page:
                                         "Year": "Year"},
                                 template="plotly_white",
                                 color_discrete_sequence=px.colors.qualitative.Set1)
-        fig_dist.update_layout(height=380, paper_bgcolor="white", plot_bgcolor="white")
+        fig_dist.update_layout(height=380, paper_bgcolor="white", plot_bgcolor="white", font=dict(color="#1a2b3c"))
         st.plotly_chart(fig_dist, use_container_width=True)
 
         # Download
