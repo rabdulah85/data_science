@@ -473,12 +473,10 @@ elif "Convergence" in page:
                        hoverlabel=dict(bgcolor="white", font_color="#1a2b3c",
                                       font_size=12, bordercolor="#e2e8f0"))
         st.plotly_chart(fig_dist, use_container_width=True)
-prov_sel = st.multiselect("Province", prov_options, default=prov_options)
         # Download
-        buf_conv = fig_beta.to_html(full_html=True, include_plotlyjs='cdn')
-        st.download_button("⬇️ Download β-Convergence Chart (HTML)", buf_conv,
-                           "beta_convergence.html", "text/html")
-
+    buf_conv = fig_beta.to_html(full_html=True, include_plotlyjs='cdn')
+    st.download_button("⬇️ Download β-Convergence Chart (HTML)", buf_conv,
+                        "beta_convergence.html", "text/html")
 
 elif "Data" in page:
     st.markdown('<p class="section-title">📋 Complete Data Table</p>', unsafe_allow_html=True)
