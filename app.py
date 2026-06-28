@@ -40,6 +40,37 @@ st.markdown("""
     [data-testid="stSelectbox"] > div > div {
         background-color: #ffffff !important;
     }
+    /* Fix download buttons — light style */
+    .stDownloadButton > button {
+        background-color: #f0f4f8 !important;
+        color: #1a3a5c !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 6px !important;
+    }
+    .stDownloadButton > button:hover {
+        background-color: #e2e8f0 !important;
+        color: #0f6b8a !important;
+    }
+    /* Fix invisible text in toggles, captions, info boxes */
+    .stToggle label, .stCaption, [data-testid="stCaptionContainer"] {
+        color: #4a5568 !important;
+    }
+    p, li, span, label, div {
+        color: #1a2b3c;
+    }
+    /* Fix chart title text */
+    .js-plotly-plot .plotly .gtitle {
+        fill: #1a2b3c !important;
+    }
+    /* Info/warning boxes */
+    [data-testid="stAlert"] {
+        background-color: #eff6ff !important;
+        color: #1a2b3c !important;
+        border: 1px solid #bfdbfe !important;
+    }
+    [data-testid="stAlert"] * {
+        color: #1a2b3c !important;
+    }
     .main-header {
         background: linear-gradient(135deg, #1a3a5c 0%, #0f6b8a 100%);
         padding: 1.8rem 2.5rem; border-radius: 12px; margin-bottom: 1.5rem;
