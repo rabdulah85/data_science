@@ -55,8 +55,10 @@ st.markdown("""
     .stToggle label, .stCaption, [data-testid="stCaptionContainer"] {
         color: #4a5568 !important;
     }
-    p, li, span, label, div {
-        color: #1a2b3c;
+    /* Fix header text — keep white inside main-header */
+    .main-header h1, .main-header p {
+        color: white !important;
+        background-color: transparent !important;
     }
     /* Fix chart title text */
     .js-plotly-plot .plotly .gtitle {
