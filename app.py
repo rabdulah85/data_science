@@ -89,7 +89,7 @@ gdp_years = sorted([int(c.replace("gdp_","")) for c in df.columns if c.startswit
 
 with st.sidebar:
     st.markdown("### 🗂️ Navigation")
-    page = st.radio("", ["🏠 Home","🗺️ Map","📈 Time Series","🏆 Ranking","📋 Data"],
+    page = st.radio("", ["🏠 Home","🗺️ Map","📈 Time Series","🏆 Ranking","📋 Data","📉 Convergence"],
                     label_visibility="collapsed")
     st.markdown("---")
     st.markdown("### ⚙️ Filter")
@@ -101,7 +101,7 @@ with st.sidebar:
         prov_options = sorted(df[df["island_en"] == island_sel]["province_en"].unique().tolist())
     else:
         prov_options = sorted(df["province_en"].unique().tolist())
-    prov_sel = st.multiselect("Province", prov_options, default=prov_options)
+    prov_sel = st.multiselect("Province", prov_options, default=prov_options[:5])
 
     if prov_sel:
         dist_options = sorted(df[df["province_en"].isin(prov_sel)]["district_en"].unique().tolist())
@@ -294,6 +294,138 @@ elif "Ranking" in page:
     fig5.update_layout(height=420, legend_title_text="Island", paper_bgcolor="white", plot_bgcolor="white")
     st.plotly_chart(fig5, use_container_width=True)
 
+
+elif "Convergence" in page:
+    st.markdown("""
+    <div class="main-header">
+        <h1>📉 Convergence Analysis</h1>
+        <p>GDP convergence across 514 Indonesian districts · 2010–2025</p>
+    </div>""", unsafe_allow_html=True)
+
+    # Log toggle
+    use_log = st.toggle("Use Log GDP", value=True,
+                        help="Log transformation reduces skewness and is standard in convergence analysis")
+
+    st.markdown('<p class="section-title">① σ-Convergence — Is GDP disparity narrowing over time?</p>',
+                unsafe_allow_html=True)
+    st.caption("σ-convergence occurs when the standard deviation of GDP across districts **decreases** over time.")
+
+    # Compute sigma convergence
+    sigma_data = []
+    for y in gdp_years:
+        col = f"gdp_{y}"
+        vals = df_fil[col].replace(0, np.nan).dropna()
+        if use_log:
+            vals = np.log(vals)
+        sigma_data.append({"Year": y, "Std Dev": vals.std(), "CV": vals.std()/vals.mean()})
+    df_sigma = pd.DataFrame(sigma_data)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        fig_sigma = px.line(df_sigma, x="Year", y="Std Dev", markers=True,
+                            title=f"Standard Deviation of {'Log ' if use_log else ''}GDP",
+                            template="plotly_white",
+                            color_discrete_sequence=["#0f6b8a"])
+        fig_sigma.update_traces(line_width=2.5, marker_size=7)
+        fig_sigma.update_layout(height=350, paper_bgcolor="white", plot_bgcolor="white",
+                                title_font_size=13)
+        fig_sigma.add_annotation(
+            x=gdp_years[-1], y=df_sigma["Std Dev"].iloc[-1],
+            text="↑ Diverging" if df_sigma["Std Dev"].iloc[-1] > df_sigma["Std Dev"].iloc[0] else "↓ Converging",
+            showarrow=True, arrowhead=2, font_size=11,
+            font_color="red" if df_sigma["Std Dev"].iloc[-1] > df_sigma["Std Dev"].iloc[0] else "green"
+        )
+        st.plotly_chart(fig_sigma, use_container_width=True)
+
+    with c2:
+        fig_cv = px.line(df_sigma, x="Year", y="CV", markers=True,
+                         title=f"Coefficient of Variation of {'Log ' if use_log else ''}GDP",
+                         template="plotly_white",
+                         color_discrete_sequence=["#e05c5c"])
+        fig_cv.update_traces(line_width=2.5, marker_size=7)
+        fig_cv.update_layout(height=350, paper_bgcolor="white", plot_bgcolor="white",
+                             title_font_size=13)
+        st.plotly_chart(fig_cv, use_container_width=True)
+
+    # Sigma interpretation
+    delta = df_sigma["Std Dev"].iloc[-1] - df_sigma["Std Dev"].iloc[0]
+    direction = "increased" if delta > 0 else "decreased"
+    verdict = "**diverging** (σ-divergence)" if delta > 0 else "**converging** (σ-convergence)"
+    st.info(f"📊 The standard deviation of {'log ' if use_log else ''}GDP has {direction} from "
+            f"**{df_sigma['Std Dev'].iloc[0]:.3f}** (2010) to **{df_sigma['Std Dev'].iloc[-1]:.3f}** (2025), "
+            f"suggesting districts are {verdict}.")
+
+    st.markdown("---")
+    st.markdown('<p class="section-title">② β-Convergence — Do poorer districts grow faster?</p>',
+                unsafe_allow_html=True)
+    st.caption("β-convergence occurs when districts with **lower initial GDP grow faster** — a negative slope indicates convergence.")
+
+    # Compute beta convergence
+    df_beta = df_fil[["districtID","district_en","province_en","island_en","gdp_2010","gdp_2025"]].copy()
+    df_beta = df_beta.replace(0, np.nan).dropna()
+    df_beta["growth_rate"] = ((df_beta["gdp_2025"] - df_beta["gdp_2010"]) / df_beta["gdp_2010"] * 100)
+
+    if use_log:
+        df_beta["initial_gdp"] = np.log(df_beta["gdp_2010"])
+        x_label = "Log GDP 2010 (Initial Level)"
+    else:
+        df_beta["initial_gdp"] = df_beta["gdp_2010"]
+        x_label = "GDP 2010 (Initial Level, M Rp)"
+
+    # OLS trendline
+    fig_beta = px.scatter(df_beta, x="initial_gdp", y="growth_rate",
+                          color="island_en", hover_name="district_en",
+                          hover_data={"province_en": True, "initial_gdp": ":.2f", "growth_rate": ":.1f"},
+                          trendline="ols",
+                          labels={"initial_gdp": x_label,
+                                  "growth_rate": "GDP Growth Rate 2010–2025 (%)",
+                                  "island_en": "Island"},
+                          template="plotly_white",
+                          color_discrete_sequence=px.colors.qualitative.Set2,
+                          opacity=0.65)
+    fig_beta.update_layout(height=460, paper_bgcolor="white", plot_bgcolor="white")
+    st.plotly_chart(fig_beta, use_container_width=True)
+
+    # OLS result
+    from scipy import stats
+    slope, intercept, r, p, se = stats.linregress(df_beta["initial_gdp"], df_beta["growth_rate"])
+    beta_verdict = "β-convergence ✅" if slope < 0 else "β-divergence ⚠️"
+    st.info(f"📊 OLS slope = **{slope:.3f}** (p = {p:.4f}, R² = {r**2:.3f}) → **{beta_verdict}**. "
+            f"{'Districts with lower initial GDP tend to grow faster.' if slope < 0 else 'Districts with higher initial GDP tend to grow faster.'}")
+
+    st.markdown("---")
+    st.markdown('<p class="section-title">③ Distribution Dynamics — How has the GDP distribution shifted?</p>',
+                unsafe_allow_html=True)
+    st.caption("Tracks how the full distribution of GDP across districts has evolved from 2010 to 2025.")
+
+    # Select years to compare
+    years_compare = st.multiselect("Select years to compare",
+                                   gdp_years, default=[2010, 2015, 2020, 2025])
+    if years_compare:
+        df_dist = []
+        for y in years_compare:
+            vals = df_fil[f"gdp_{y}"].replace(0, np.nan).dropna()
+            if use_log:
+                vals = np.log(vals)
+            tmp = pd.DataFrame({"GDP": vals, "Year": str(y)})
+            df_dist.append(tmp)
+        df_dist = pd.concat(df_dist)
+
+        fig_dist = px.histogram(df_dist, x="GDP", color="Year", barmode="overlay",
+                                nbins=40, opacity=0.6,
+                                labels={"GDP": f"{'Log ' if use_log else ''}GDP",
+                                        "Year": "Year"},
+                                template="plotly_white",
+                                color_discrete_sequence=px.colors.qualitative.Set1)
+        fig_dist.update_layout(height=380, paper_bgcolor="white", plot_bgcolor="white")
+        st.plotly_chart(fig_dist, use_container_width=True)
+
+        # Download
+        buf_conv = fig_beta.to_html(full_html=True, include_plotlyjs='cdn')
+        st.download_button("⬇️ Download β-Convergence Chart (HTML)", buf_conv,
+                           "beta_convergence.html", "text/html")
+
+
 elif "Data" in page:
     st.markdown('<p class="section-title">📋 Complete Data Table</p>', unsafe_allow_html=True)
     search = st.text_input("🔍 Search district/city...", "")
@@ -305,3 +437,5 @@ elif "Data" in page:
     st.dataframe(df_show.reset_index(drop=True), use_container_width=True, height=450)
     csv = df_show.to_csv(index=False).encode("utf-8")
     st.download_button("⬇️ Download CSV", csv, f"gdp_indonesia_{tahun_sel}.csv", "text/csv")
+
+# ── CONVERGENCE ───────────────────────────────
