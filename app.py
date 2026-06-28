@@ -141,7 +141,8 @@ with st.sidebar:
         prov_options = sorted(df[df["island_en"] == island_sel]["province_en"].unique().tolist())
     else:
         prov_options = sorted(df["province_en"].unique().tolist())
-    prov_sel = st.multiselect("Province", prov_options, default=prov_options)
+    prov_sel = st.multiselect("Province", prov_options, default=prov_options[:5])
+
     if prov_sel:
         dist_options = sorted(df[df["province_en"].isin(prov_sel)]["district_en"].unique().tolist())
     else:
@@ -320,11 +321,8 @@ elif "Ranking" in page:
                   color="island_en", orientation="h", template="plotly_white",
                   labels={col_gdp:f"GDP {tahun_sel} (M Rp)","district_en":"","island_en":"Island"},
                   color_discrete_sequence=px.colors.qualitative.Set2)
-   fig4.update_layout(height=520, margin=dict(l=5,r=5,t=10,b=10),
-                   paper_bgcolor="white", plot_bgcolor="white",
-                   font=dict(color="#1a2b3c"),
-                   hoverlabel=dict(bgcolor="white", font_color="#1a2b3c",
-                                    font_size=12, bordercolor="#e2e8f0"))
+    fig4.update_layout(height=520, margin=dict(l=5,r=5,t=10,b=10), paper_bgcolor="white", plot_bgcolor="white", font=dict(color="#1a2b3c"))
+    st.plotly_chart(fig4, use_container_width=True)
     buf4 = fig4.to_html(full_html=True, include_plotlyjs='cdn')
     st.download_button("⬇️ Download Ranking Chart (HTML)", buf4, f"gdp_ranking_{tahun_sel}.html", "text/html")
 
@@ -372,9 +370,7 @@ elif "Convergence" in page:
                             color_discrete_sequence=["#0f6b8a"])
         fig_sigma.update_traces(line_width=2.5, marker_size=7)
         fig_sigma.update_layout(height=350, paper_bgcolor="white", plot_bgcolor="white",
-                        font=dict(color="#1a2b3c"), title_font_size=13,
-                        hoverlabel=dict(bgcolor="white", font_color="#1a2b3c",
-                                       font_size=12, bordercolor="#e2e8f0"))
+                                title_font_size=13)
         fig_sigma.add_annotation(
             x=gdp_years[-1], y=df_sigma["Std Dev"].iloc[-1],
             text="↑ Diverging" if df_sigma["Std Dev"].iloc[-1] > df_sigma["Std Dev"].iloc[0] else "↓ Converging",
@@ -429,14 +425,7 @@ elif "Convergence" in page:
                           template="plotly_white",
                           color_discrete_sequence=px.colors.qualitative.Set2,
                           opacity=0.65)
-    fig_beta.update_layout(height=460, paper_bgcolor="white", plot_bgcolor="white",
-                       font=dict(color="#1a2b3c"),
-                       hoverlabel=dict(
-                           bgcolor="white",
-                           font_color="#1a2b3c",
-                           font_size=12,
-                           bordercolor="#e2e8f0"
-                       ))
+    fig_beta.update_layout(height=460, paper_bgcolor="white", plot_bgcolor="white", font=dict(color="#1a2b3c"))
     st.plotly_chart(fig_beta, use_container_width=True)
 
     # OLS result
@@ -470,15 +459,14 @@ elif "Convergence" in page:
                                         "Year": "Year"},
                                 template="plotly_white",
                                 color_discrete_sequence=px.colors.qualitative.Set1)
-        fig_dist.update_layout(height=380, paper_bgcolor="white", plot_bgcolor="white",
-                       font=dict(color="#1a2b3c"),
-                       hoverlabel=dict(bgcolor="white", font_color="#1a2b3c",
-                                      font_size=12, bordercolor="#e2e8f0"))
+        fig_dist.update_layout(height=380, paper_bgcolor="white", plot_bgcolor="white", font=dict(color="#1a2b3c"))
         st.plotly_chart(fig_dist, use_container_width=True)
+
         # Download
-    buf_conv = fig_beta.to_html(full_html=True, include_plotlyjs='cdn')
-    st.download_button("⬇️ Download β-Convergence Chart (HTML)", buf_conv,
-                        "beta_convergence.html", "text/html")
+        buf_conv = fig_beta.to_html(full_html=True, include_plotlyjs='cdn')
+        st.download_button("⬇️ Download β-Convergence Chart (HTML)", buf_conv,
+                           "beta_convergence.html", "text/html")
+
 
 elif "Data" in page:
     st.markdown('<p class="section-title">📋 Complete Data Table</p>', unsafe_allow_html=True)
