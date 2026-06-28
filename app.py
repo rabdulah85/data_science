@@ -468,7 +468,10 @@ elif "Convergence" in page:
                                         "Year": "Year"},
                                 template="plotly_white",
                                 color_discrete_sequence=px.colors.qualitative.Set1)
-        fig_dist.update_layout(height=380, paper_bgcolor="white", plot_bgcolor="white", font=dict(color="#1a2b3c"))
+        fig_dist.update_layout(height=380, paper_bgcolor="white", plot_bgcolor="white",
+                       font=dict(color="#1a2b3c"),
+                       hoverlabel=dict(bgcolor="white", font_color="#1a2b3c",
+                                      font_size=12, bordercolor="#e2e8f0"))
         st.plotly_chart(fig_dist, use_container_width=True)
 
         # Download
