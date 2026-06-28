@@ -101,7 +101,7 @@ with st.sidebar:
         prov_options = sorted(df[df["island_en"] == island_sel]["province_en"].unique().tolist())
     else:
         prov_options = sorted(df["province_en"].unique().tolist())
-    prov_sel = st.multiselect("Province", prov_options, default=prov_options[:5])
+    prov_sel = st.multiselect("Province", prov_options, default=prov_options)
 
     if prov_sel:
         dist_options = sorted(df[df["province_en"].isin(prov_sel)]["district_en"].unique().tolist())
