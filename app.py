@@ -370,7 +370,9 @@ elif "Convergence" in page:
                             color_discrete_sequence=["#0f6b8a"])
         fig_sigma.update_traces(line_width=2.5, marker_size=7)
         fig_sigma.update_layout(height=350, paper_bgcolor="white", plot_bgcolor="white",
-                                title_font_size=13)
+                        font=dict(color="#1a2b3c"), title_font_size=13,
+                        hoverlabel=dict(bgcolor="white", font_color="#1a2b3c",
+                                       font_size=12, bordercolor="#e2e8f0"))
         fig_sigma.add_annotation(
             x=gdp_years[-1], y=df_sigma["Std Dev"].iloc[-1],
             text="↑ Diverging" if df_sigma["Std Dev"].iloc[-1] > df_sigma["Std Dev"].iloc[0] else "↓ Converging",
