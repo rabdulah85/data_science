@@ -98,9 +98,18 @@ def load_data():
 @st.cache_data
 def load_geojson():
     url_geo = "https://raw.githubusercontent.com/quarcs-lab/indonesia514/main/maps/mapIndonesia514_new.geojson"
-    with urllib.request.urlopen(url_geo) as r:
-        geo = json.loads(r.read())
-    return geo
+    import time
+    for attempt in range(3):
+        try:
+            req = urllib.request.Request(url_geo, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=30) as r:
+                geo = json.loads(r.read())
+            return geo
+        except Exception as e:
+            if attempt < 2:
+                time.sleep(2)
+            else:
+                raise e
 
 df, df_long = load_data()
 geojson   = load_geojson()
