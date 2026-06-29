@@ -199,17 +199,31 @@ if "Home" in page:
     st.markdown("")
     c1,c2 = st.columns([3,2])
     with c1:
-        st.markdown('<p class="section-title">GDP per Province</p>', unsafe_allow_html=True)
-        df_prov = df_fil.groupby("province_en")[col_gdp].sum().reset_index().sort_values(col_gdp)
-        fig = px.bar(df_prov, x=col_gdp, y="province_en", orientation="h",
-                     color=col_gdp, color_continuous_scale="Blues",
-                     labels={col_gdp:"GDP (M Rp)","province_en":""}, template="plotly_white")
-        fig.update_layout(height=420, margin=dict(l=5,r=5,t=10,b=10),
-                          coloraxis_showscale=False, paper_bgcolor="white", plot_bgcolor="white",
-                          font=FONT, hoverlabel=HOVER)
+        view_opt = st.radio("View by", ["Province", "Top 20 Districts"], horizontal=True)
+        if view_opt == "Province":
+            st.markdown('<p class="section-title">GDP per Province</p>', unsafe_allow_html=True)
+            df_prov = df_fil.groupby("province_en")[col_gdp].sum().reset_index().sort_values(col_gdp, ascending=True)
+            fig = px.bar(df_prov, x=col_gdp, y="province_en", orientation="h",
+                         color=col_gdp, color_continuous_scale="Blues",
+                         labels={col_gdp:"GDP (M Rp)","province_en":""}, template="plotly_white")
+            fig.update_layout(height=max(400, len(df_prov)*22),
+                              margin=dict(l=5,r=5,t=10,b=10),
+                              coloraxis_showscale=False, paper_bgcolor="white", plot_bgcolor="white",
+                              font=FONT, hoverlabel=HOVER)
+        else:
+            st.markdown('<p class="section-title">Top 20 Districts by GDP</p>', unsafe_allow_html=True)
+            df_top = df_fil.nlargest(20, col_gdp)[["district_en","province_en",col_gdp]].sort_values(col_gdp, ascending=True)
+            fig = px.bar(df_top, x=col_gdp, y="district_en", orientation="h",
+                         color="province_en",
+                         labels={col_gdp:"GDP (M Rp)","district_en":"","province_en":"Province"},
+                         template="plotly_white",
+                         color_discrete_sequence=px.colors.qualitative.Set2)
+            fig.update_layout(height=500, margin=dict(l=5,r=5,t=10,b=10),
+                              paper_bgcolor="white", plot_bgcolor="white",
+                              font=FONT, hoverlabel=HOVER)
         buf = fig.to_html(full_html=True, include_plotlyjs='cdn')
         st.plotly_chart(fig, use_container_width=True)
-        st.download_button("⬇️ Download Bar Chart (HTML)", buf, f"gdp_province_{tahun_sel}.html", "text/html")
+        st.download_button("⬇️ Download Bar Chart (HTML)", buf, f"gdp_{view_opt.lower().replace(' ','_')}_{tahun_sel}.html", "text/html")
     with c2:
         st.markdown('<p class="section-title">GDP Share per Island</p>', unsafe_allow_html=True)
         df_pulau = df_fil.groupby("island_en")[col_gdp].sum().reset_index()
