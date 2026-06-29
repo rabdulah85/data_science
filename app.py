@@ -4,6 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import json, urllib.request
 import numpy as np
+from scipy import stats
 
 st.set_page_config(
     page_title="GDP Indonesia 514 Districts",
@@ -11,6 +12,9 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+HOVER = dict(bgcolor="white", font_color="#1a2b3c", font_size=12, bordercolor="#e2e8f0")
+FONT  = dict(color="#1a2b3c")
 
 st.markdown("""
 <style>
@@ -37,10 +41,6 @@ st.markdown("""
         background-color: #ffffff !important;
         border: 1px solid #e2e8f0 !important;
     }
-    [data-testid="stSelectbox"] > div > div {
-        background-color: #ffffff !important;
-    }
-    /* Fix download buttons — light style */
     .stDownloadButton > button {
         background-color: #f0f4f8 !important;
         color: #1a3a5c !important;
@@ -51,41 +51,14 @@ st.markdown("""
         background-color: #e2e8f0 !important;
         color: #0f6b8a !important;
     }
-    /* Fix invisible text in toggles, captions, info boxes */
-    .stToggle label, .stCaption, [data-testid="stCaptionContainer"] {
-        color: #4a5568 !important;
-    }
-    /* Fix header text — keep white inside main-header */
-    .main-header h1, .main-header p {
-        color: white !important;
-        background-color: transparent !important;
-    }
-    /* Fix chart text — axis labels, ticks, titles */
-    .js-plotly-plot .plotly .gtitle,
-    .js-plotly-plot .plotly .xtitle,
-    .js-plotly-plot .plotly .ytitle,
-    .js-plotly-plot .plotly .xtick text,
-    .js-plotly-plot .plotly .ytick text,
-    .js-plotly-plot .plotly .legendtext,
-    .js-plotly-plot .plotly text {
-        fill: #1a2b3c !important;
-        color: #1a2b3c !important;
-    }
-    /* Info/warning boxes */
-    [data-testid="stAlert"] {
-        background-color: #eff6ff !important;
-        color: #1a2b3c !important;
-        border: 1px solid #bfdbfe !important;
-    }
-    [data-testid="stAlert"] * {
-        color: #1a2b3c !important;
-    }
+    .stToggle label { color: #4a5568 !important; }
     .main-header {
         background: linear-gradient(135deg, #1a3a5c 0%, #0f6b8a 100%);
         padding: 1.8rem 2.5rem; border-radius: 12px; margin-bottom: 1.5rem;
     }
-    .main-header h1 { font-family: 'DM Serif Display', serif; font-size: 1.9rem; margin: 0 0 0.3rem 0; color: white; }
-    .main-header p  { font-size: 0.85rem; opacity: 0.8; margin: 0; color: #cde8f0; }
+    .main-header h1, .main-header p { color: white !important; background-color: transparent !important; }
+    .main-header h1 { font-family: 'DM Serif Display', serif; font-size: 1.9rem; margin: 0 0 0.3rem 0; }
+    .main-header p  { font-size: 0.85rem; opacity: 0.9; margin: 0; }
     .kpi-card {
         background: white; border: 1px solid #e2e8f0; border-radius: 10px;
         padding: 1.1rem 1.2rem; box-shadow: 0 2px 8px rgba(0,0,0,0.05); text-align: center;
@@ -98,6 +71,12 @@ st.markdown("""
         font-size: 0.95rem; font-weight: 600; color: #1a3a5c;
         border-left: 3px solid #0f6b8a; padding-left: 0.75rem; margin: 1.5rem 0 0.8rem 0;
     }
+    [data-testid="stAlert"] {
+        background-color: #eff6ff !important; color: #1a2b3c !important;
+        border: 1px solid #bfdbfe !important;
+    }
+    [data-testid="stAlert"] * { color: #1a2b3c !important; }
+    .js-plotly-plot .plotly text { fill: #1a2b3c !important; }
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
@@ -127,6 +106,7 @@ df, df_long = load_data()
 geojson   = load_geojson()
 gdp_years = sorted([int(c.replace("gdp_","")) for c in df.columns if c.startswith("gdp_")])
 
+# ── SIDEBAR ───────────────────────────────────
 with st.sidebar:
     st.markdown("### 🗂️ Navigation")
     page = st.radio("", ["🏠 Home","🗺️ Map","📈 Time Series","🏆 Ranking","📋 Data","📉 Convergence"],
@@ -141,7 +121,7 @@ with st.sidebar:
         prov_options = sorted(df[df["island_en"] == island_sel]["province_en"].unique().tolist())
     else:
         prov_options = sorted(df["province_en"].unique().tolist())
-    prov_sel = st.multiselect("Province", prov_options, default=prov_options[:5])
+    prov_sel = st.multiselect("Province", prov_options, default=prov_options)
 
     if prov_sel:
         dist_options = sorted(df[df["province_en"].isin(prov_sel)]["district_en"].unique().tolist())
@@ -150,11 +130,11 @@ with st.sidebar:
     dist_sel = st.multiselect("District", dist_options, default=[])
 
     tahun_sel = st.select_slider("Year", options=gdp_years, value=2024)
-
     st.markdown("---")
     st.markdown("<small style='color:#6b7c93'>Source: quarcs-lab/indonesia514<br>514 Districts · 2010–2025</small>",
                 unsafe_allow_html=True)
 
+# ── FILTER ────────────────────────────────────
 col_gdp = f"gdp_{tahun_sel}"
 
 if dist_sel:
@@ -175,6 +155,7 @@ elif island_sel != "All":
 else:
     df_long_f = df_long
 
+# ── HOME ──────────────────────────────────────
 if "Home" in page:
     st.markdown("""
     <div class="main-header">
@@ -215,24 +196,25 @@ if "Home" in page:
                      color=col_gdp, color_continuous_scale="Blues",
                      labels={col_gdp:"GDP (M Rp)","province_en":""}, template="plotly_white")
         fig.update_layout(height=420, margin=dict(l=5,r=5,t=10,b=10),
-                          coloraxis_showscale=False, paper_bgcolor="white", plot_bgcolor="white", font=dict(color="#1a2b3c"))
+                          coloraxis_showscale=False, paper_bgcolor="white", plot_bgcolor="white",
+                          font=FONT, hoverlabel=HOVER)
         buf = fig.to_html(full_html=True, include_plotlyjs='cdn')
         st.plotly_chart(fig, use_container_width=True)
-        st.download_button("⬇️ Download Bar Chart (HTML)", buf,
-                           f"gdp_province_{tahun_sel}.html", "text/html")
+        st.download_button("⬇️ Download Bar Chart (HTML)", buf, f"gdp_province_{tahun_sel}.html", "text/html")
     with c2:
         st.markdown('<p class="section-title">GDP Share per Island</p>', unsafe_allow_html=True)
         df_pulau = df_fil.groupby("island_en")[col_gdp].sum().reset_index()
         fig2 = px.pie(df_pulau, names="island_en", values=col_gdp, hole=0.45,
                       template="plotly_white", color_discrete_sequence=px.colors.sequential.Blues_r)
         fig2.update_layout(height=380, margin=dict(l=5,r=5,t=10,b=10),
-                           legend_title_text="Island", paper_bgcolor="white")
+                           legend_title_text="Island", paper_bgcolor="white",
+                           font=FONT, hoverlabel=HOVER)
         fig2.update_traces(textposition='inside', textinfo='percent+label')
         buf2 = fig2.to_html(full_html=True, include_plotlyjs='cdn')
         st.plotly_chart(fig2, use_container_width=True)
-        st.download_button("⬇️ Download Pie Chart (HTML)", buf2,
-                           f"gdp_island_{tahun_sel}.html", "text/html")
+        st.download_button("⬇️ Download Pie Chart (HTML)", buf2, f"gdp_island_{tahun_sel}.html", "text/html")
 
+# ── MAP ───────────────────────────────────────
 elif "Map" in page:
     st.markdown(f'<p class="section-title">🗺️ Choropleth Map of GDP by District — {tahun_sel}</p>',
                 unsafe_allow_html=True)
@@ -265,7 +247,7 @@ elif "Map" in page:
     )
     fig_map.update_layout(height=560, margin=dict(l=0,r=0,t=0,b=0),
                           coloraxis_colorbar=dict(title=label_color, thickness=14, len=0.6),
-                          paper_bgcolor="white")
+                          paper_bgcolor="white", font=FONT, hoverlabel=HOVER)
     st.plotly_chart(fig_map, use_container_width=True)
     buf_map = fig_map.to_html(full_html=True, include_plotlyjs='cdn')
     st.download_button("⬇️ Download Map (HTML)", buf_map, f"gdp_map_{tahun_sel}.html", "text/html")
@@ -284,6 +266,7 @@ elif "Map" in page:
         ratio = df_map[col_gdp].max() / df_map[col_gdp].min()
         st.metric("Max/Min Ratio", f"{ratio:,.0f}x", "Disparity Measure")
 
+# ── TIME SERIES ───────────────────────────────
 elif "Time" in page:
     st.markdown('<p class="section-title">📈 GDP Trend per Province (2010–2025)</p>', unsafe_allow_html=True)
     if df_long_f.empty:
@@ -294,7 +277,7 @@ elif "Time" in page:
                       labels={"gdp":"GDP (M Rp)","tahun":"Year","province_en":"Province"},
                       template="plotly_white", color_discrete_sequence=px.colors.qualitative.Set2)
         fig.update_layout(height=460, hovermode="x unified", paper_bgcolor="white", plot_bgcolor="white",
-                          font=dict(color="#1a2b3c"),
+                          font=FONT, hoverlabel=HOVER,
                           legend=dict(orientation="h", yanchor="bottom", y=-0.35))
         st.plotly_chart(fig, use_container_width=True)
         buf_ts = fig.to_html(full_html=True, include_plotlyjs='cdn')
@@ -310,10 +293,11 @@ elif "Time" in page:
                       labels={"growth_pct":"Growth (%)","district_en":"District","province_en":"Province"},
                       color_discrete_sequence=px.colors.qualitative.Set2)
         fig3.update_layout(height=380, xaxis_tickangle=-35, paper_bgcolor="white", plot_bgcolor="white",
-                           font=dict(color="#1a2b3c"),
+                           font=FONT, hoverlabel=HOVER,
                            legend_title_text="Province", margin=dict(b=80))
         st.plotly_chart(fig3, use_container_width=True)
 
+# ── RANKING ───────────────────────────────────
 elif "Ranking" in page:
     st.markdown(f'<p class="section-title">🏆 Top 20 Districts — GDP {tahun_sel}</p>', unsafe_allow_html=True)
     top20 = df_fil.nlargest(20, col_gdp)[["district_en","province_en","island_en",col_gdp]].copy()
@@ -321,7 +305,9 @@ elif "Ranking" in page:
                   color="island_en", orientation="h", template="plotly_white",
                   labels={col_gdp:f"GDP {tahun_sel} (M Rp)","district_en":"","island_en":"Island"},
                   color_discrete_sequence=px.colors.qualitative.Set2)
-    fig4.update_layout(height=520, margin=dict(l=5,r=5,t=10,b=10), paper_bgcolor="white", plot_bgcolor="white", font=dict(color="#1a2b3c"))
+    fig4.update_layout(height=520, margin=dict(l=5,r=5,t=10,b=10),
+                       paper_bgcolor="white", plot_bgcolor="white",
+                       font=FONT, hoverlabel=HOVER)
     st.plotly_chart(fig4, use_container_width=True)
     buf4 = fig4.to_html(full_html=True, include_plotlyjs='cdn')
     st.download_button("⬇️ Download Ranking Chart (HTML)", buf4, f"gdp_ranking_{tahun_sel}.html", "text/html")
@@ -332,11 +318,14 @@ elif "Ranking" in page:
     fig5 = px.scatter(df_sc, x=col_gdp, y="growth", color="island_en",
                       hover_name="district_en", hover_data={"province_en":True},
                       labels={col_gdp:f"GDP {tahun_sel} (M Rp)","growth":"Growth 2010–2025 (%)"},
-                      template="plotly_white", color_discrete_sequence=px.colors.qualitative.Set2, opacity=0.75)
-    fig5.update_layout(height=420, legend_title_text="Island", paper_bgcolor="white", plot_bgcolor="white", font=dict(color="#1a2b3c"))
+                      template="plotly_white",
+                      color_discrete_sequence=px.colors.qualitative.Set2, opacity=0.75)
+    fig5.update_layout(height=420, legend_title_text="Island",
+                       paper_bgcolor="white", plot_bgcolor="white",
+                       font=FONT, hoverlabel=HOVER)
     st.plotly_chart(fig5, use_container_width=True)
 
-
+# ── CONVERGENCE ───────────────────────────────
 elif "Convergence" in page:
     st.markdown("""
     <div class="main-header">
@@ -344,19 +333,17 @@ elif "Convergence" in page:
         <p>GDP convergence across 514 Indonesian districts · 2010–2025</p>
     </div>""", unsafe_allow_html=True)
 
-    # Log toggle
     use_log = st.toggle("Use Log GDP", value=True,
-                        help="Log transformation reduces skewness and is standard in convergence analysis")
+                        help="Log transformation reduces skewness — standard in convergence analysis")
 
+    # ① SIGMA CONVERGENCE
     st.markdown('<p class="section-title">① σ-Convergence — Is GDP disparity narrowing over time?</p>',
                 unsafe_allow_html=True)
     st.caption("σ-convergence occurs when the standard deviation of GDP across districts **decreases** over time.")
 
-    # Compute sigma convergence
     sigma_data = []
     for y in gdp_years:
-        col = f"gdp_{y}"
-        vals = df_fil[col].replace(0, np.nan).dropna()
+        vals = df_fil[f"gdp_{y}"].replace(0, np.nan).dropna()
         if use_log:
             vals = np.log(vals)
         sigma_data.append({"Year": y, "Std Dev": vals.std(), "CV": vals.std()/vals.mean()})
@@ -366,108 +353,92 @@ elif "Convergence" in page:
     with c1:
         fig_sigma = px.line(df_sigma, x="Year", y="Std Dev", markers=True,
                             title=f"Standard Deviation of {'Log ' if use_log else ''}GDP",
-                            template="plotly_white",
-                            color_discrete_sequence=["#0f6b8a"])
+                            template="plotly_white", color_discrete_sequence=["#0f6b8a"])
         fig_sigma.update_traces(line_width=2.5, marker_size=7)
         fig_sigma.update_layout(height=350, paper_bgcolor="white", plot_bgcolor="white",
-                                title_font_size=13)
-        fig_sigma.add_annotation(
-            x=gdp_years[-1], y=df_sigma["Std Dev"].iloc[-1],
-            text="↑ Diverging" if df_sigma["Std Dev"].iloc[-1] > df_sigma["Std Dev"].iloc[0] else "↓ Converging",
-            showarrow=True, arrowhead=2, font_size=11,
-            font_color="red" if df_sigma["Std Dev"].iloc[-1] > df_sigma["Std Dev"].iloc[0] else "green"
-        )
+                                font=FONT, hoverlabel=HOVER, title_font_size=13)
+        trend = "↑ Diverging" if df_sigma["Std Dev"].iloc[-1] > df_sigma["Std Dev"].iloc[0] else "↓ Converging"
+        color = "red" if "Diverging" in trend else "green"
+        fig_sigma.add_annotation(x=gdp_years[-1], y=df_sigma["Std Dev"].iloc[-1],
+                                 text=trend, showarrow=True, arrowhead=2,
+                                 font_size=11, font_color=color)
         st.plotly_chart(fig_sigma, use_container_width=True)
 
     with c2:
         fig_cv = px.line(df_sigma, x="Year", y="CV", markers=True,
                          title=f"Coefficient of Variation of {'Log ' if use_log else ''}GDP",
-                         template="plotly_white",
-                         color_discrete_sequence=["#e05c5c"])
+                         template="plotly_white", color_discrete_sequence=["#e05c5c"])
         fig_cv.update_traces(line_width=2.5, marker_size=7)
         fig_cv.update_layout(height=350, paper_bgcolor="white", plot_bgcolor="white",
-                             title_font_size=13)
+                             font=FONT, hoverlabel=HOVER, title_font_size=13)
         st.plotly_chart(fig_cv, use_container_width=True)
 
-    # Sigma interpretation
     delta = df_sigma["Std Dev"].iloc[-1] - df_sigma["Std Dev"].iloc[0]
     direction = "increased" if delta > 0 else "decreased"
     verdict = "**diverging** (σ-divergence)" if delta > 0 else "**converging** (σ-convergence)"
-    st.info(f"📊 The standard deviation of {'log ' if use_log else ''}GDP has {direction} from "
-            f"**{df_sigma['Std Dev'].iloc[0]:.3f}** (2010) to **{df_sigma['Std Dev'].iloc[-1]:.3f}** (2025), "
-            f"suggesting districts are {verdict}.")
+    st.info(f"📊 Std Dev of {'log ' if use_log else ''}GDP has {direction} from "
+            f"**{df_sigma['Std Dev'].iloc[0]:.3f}** (2010) to **{df_sigma['Std Dev'].iloc[-1]:.3f}** (2025) → {verdict}.")
 
     st.markdown("---")
+
+    # ② BETA CONVERGENCE
     st.markdown('<p class="section-title">② β-Convergence — Do poorer districts grow faster?</p>',
                 unsafe_allow_html=True)
-    st.caption("β-convergence occurs when districts with **lower initial GDP grow faster** — a negative slope indicates convergence.")
+    st.caption("β-convergence: districts with **lower initial GDP grow faster** — negative slope = convergence.")
 
-    # Compute beta convergence
     df_beta = df_fil[["districtID","district_en","province_en","island_en","gdp_2010","gdp_2025"]].copy()
     df_beta = df_beta.replace(0, np.nan).dropna()
     df_beta["growth_rate"] = ((df_beta["gdp_2025"] - df_beta["gdp_2010"]) / df_beta["gdp_2010"] * 100)
+    df_beta["initial_gdp"] = np.log(df_beta["gdp_2010"]) if use_log else df_beta["gdp_2010"]
+    x_label = "Log GDP 2010 (Initial Level)" if use_log else "GDP 2010 (Initial Level, M Rp)"
 
-    if use_log:
-        df_beta["initial_gdp"] = np.log(df_beta["gdp_2010"])
-        x_label = "Log GDP 2010 (Initial Level)"
-    else:
-        df_beta["initial_gdp"] = df_beta["gdp_2010"]
-        x_label = "GDP 2010 (Initial Level, M Rp)"
-
-    # OLS trendline
     fig_beta = px.scatter(df_beta, x="initial_gdp", y="growth_rate",
                           color="island_en", hover_name="district_en",
                           hover_data={"province_en": True, "initial_gdp": ":.2f", "growth_rate": ":.1f"},
                           trendline="ols",
-                          labels={"initial_gdp": x_label,
-                                  "growth_rate": "GDP Growth Rate 2010–2025 (%)",
+                          labels={"initial_gdp": x_label, "growth_rate": "GDP Growth Rate 2010–2025 (%)",
                                   "island_en": "Island"},
                           template="plotly_white",
-                          color_discrete_sequence=px.colors.qualitative.Set2,
-                          opacity=0.65)
-    fig_beta.update_layout(height=460, paper_bgcolor="white", plot_bgcolor="white", font=dict(color="#1a2b3c"))
+                          color_discrete_sequence=px.colors.qualitative.Set2, opacity=0.65)
+    fig_beta.update_layout(height=460, paper_bgcolor="white", plot_bgcolor="white",
+                           font=FONT, hoverlabel=HOVER)
     st.plotly_chart(fig_beta, use_container_width=True)
 
-    # OLS result
-    from scipy import stats
     slope, intercept, r, p, se = stats.linregress(df_beta["initial_gdp"], df_beta["growth_rate"])
     beta_verdict = "β-convergence ✅" if slope < 0 else "β-divergence ⚠️"
     st.info(f"📊 OLS slope = **{slope:.3f}** (p = {p:.4f}, R² = {r**2:.3f}) → **{beta_verdict}**. "
             f"{'Districts with lower initial GDP tend to grow faster.' if slope < 0 else 'Districts with higher initial GDP tend to grow faster.'}")
 
+    buf_conv = fig_beta.to_html(full_html=True, include_plotlyjs='cdn')
+    st.download_button("⬇️ Download β-Convergence Chart (HTML)", buf_conv, "beta_convergence.html", "text/html")
+
     st.markdown("---")
+
+    # ③ DISTRIBUTION DYNAMICS
     st.markdown('<p class="section-title">③ Distribution Dynamics — How has the GDP distribution shifted?</p>',
                 unsafe_allow_html=True)
     st.caption("Tracks how the full distribution of GDP across districts has evolved from 2010 to 2025.")
 
-    # Select years to compare
-    years_compare = st.multiselect("Select years to compare",
-                                   gdp_years, default=[2010, 2015, 2020, 2025])
+    years_compare = st.multiselect("Select years to compare", gdp_years, default=[2010, 2015, 2020, 2025])
     if years_compare:
         df_dist = []
         for y in years_compare:
             vals = df_fil[f"gdp_{y}"].replace(0, np.nan).dropna()
             if use_log:
                 vals = np.log(vals)
-            tmp = pd.DataFrame({"GDP": vals, "Year": str(y)})
-            df_dist.append(tmp)
+            df_dist.append(pd.DataFrame({"GDP": vals, "Year": str(y)}))
         df_dist = pd.concat(df_dist)
 
         fig_dist = px.histogram(df_dist, x="GDP", color="Year", barmode="overlay",
                                 nbins=40, opacity=0.6,
-                                labels={"GDP": f"{'Log ' if use_log else ''}GDP",
-                                        "Year": "Year"},
+                                labels={"GDP": f"{'Log ' if use_log else ''}GDP", "Year": "Year"},
                                 template="plotly_white",
                                 color_discrete_sequence=px.colors.qualitative.Set1)
-        fig_dist.update_layout(height=380, paper_bgcolor="white", plot_bgcolor="white", font=dict(color="#1a2b3c"))
+        fig_dist.update_layout(height=380, paper_bgcolor="white", plot_bgcolor="white",
+                               font=FONT, hoverlabel=HOVER)
         st.plotly_chart(fig_dist, use_container_width=True)
 
-        # Download
-        buf_conv = fig_beta.to_html(full_html=True, include_plotlyjs='cdn')
-        st.download_button("⬇️ Download β-Convergence Chart (HTML)", buf_conv,
-                           "beta_convergence.html", "text/html")
-
-
+# ── DATA ──────────────────────────────────────
 elif "Data" in page:
     st.markdown('<p class="section-title">📋 Complete Data Table</p>', unsafe_allow_html=True)
     search = st.text_input("🔍 Search district/city...", "")
@@ -479,5 +450,3 @@ elif "Data" in page:
     st.dataframe(df_show.reset_index(drop=True), use_container_width=True, height=450)
     csv = df_show.to_csv(index=False).encode("utf-8")
     st.download_button("⬇️ Download CSV", csv, f"gdp_indonesia_{tahun_sel}.csv", "text/csv")
-
-# ── CONVERGENCE ───────────────────────────────
