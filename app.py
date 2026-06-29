@@ -118,7 +118,7 @@ gdp_years = sorted([int(c.replace("gdp_","")) for c in df.columns if c.startswit
 # ── SIDEBAR ───────────────────────────────────
 with st.sidebar:
     st.markdown("### 🗂️ Navigation")
-    page = st.radio("", ["🏠 Home","🗺️ Map","📈 Time Series","🏆 Ranking","📋 Data","📉 Convergence"],
+    page = st.radio("", ["📖 Overview","🏠 Home","🗺️ Map","📈 Time Series","🏆 Ranking","📋 Data","📉 Convergence"],
                     label_visibility="collapsed")
     st.markdown("---")
     st.markdown("### ⚙️ Filter")
@@ -165,7 +165,103 @@ else:
     df_long_f = df_long
 
 # ── HOME ──────────────────────────────────────
-if "Home" in page:
+if "Overview" in page:
+    st.markdown("""
+    <div class="main-header">
+        <h1>🇮🇩 GDP Indonesia — 514 Districts Dashboard</h1>
+        <p>Regional Economic Analysis · 2010–2025 · Institute for Development of Economics and Finance (INDEF)</p>
+    </div>""", unsafe_allow_html=True)
+
+    st.markdown('<p class="section-title">About This Dashboard</p>', unsafe_allow_html=True)
+    st.markdown("""
+    This dashboard visualizes **Gross Domestic Product (GDP) data** for all **514 districts and cities** 
+    across Indonesia, covering the period **2010 to 2025**. It is designed to support 
+    regional economic research, policy analysis, and data-driven decision making.
+    """)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown('<p class="section-title">📦 Data</p>', unsafe_allow_html=True)
+        st.markdown("""
+        - **Source:** [quarcs-lab/indonesia514](https://github.com/quarcs-lab/indonesia514) (GitHub)
+        - **Coverage:** 514 kabupaten/kota across 38 provinces and 7 islands
+        - **Period:** 2010–2025 (16 years)
+        - **GDP measure:** Real GDP at **2010 constant prices** (base year 2010)
+        - **Unit:** Billion Rupiah (Miliar Rp)
+        - **Update:** Data sourced directly from BPS via the indonesia514 repository
+        """)
+
+        st.markdown('<p class="section-title">📐 Methodology</p>', unsafe_allow_html=True)
+        st.markdown("""
+        - All GDP values are expressed in **real terms** using 2010 as the base year, 
+          removing the effect of price changes (inflation) to allow meaningful comparisons over time.
+        - **Log transformation** is applied in convergence analysis to reduce skewness 
+          caused by large disparities between districts.
+        - **Growth rates** are computed as percentage change from 2010 to 2025.
+        - **OLS regression** is used to test β-convergence (slope of initial GDP vs growth rate).
+        """)
+
+    with col2:
+        st.markdown('<p class="section-title">🗂️ Dashboard Pages</p>', unsafe_allow_html=True)
+        st.markdown("""
+        | Page | Description |
+        |------|-------------|
+        | 🏠 **Home** | KPI indicators, GDP by province and island share |
+        | 🗺️ **Map** | Choropleth map of GDP across 514 districts |
+        | 📈 **Time Series** | GDP trends and growth rates over time |
+        | 🏆 **Ranking** | Top 20 districts and GDP vs growth scatter |
+        | 📋 **Data** | Full data table with CSV export |
+        | 📉 **Convergence** | σ-convergence, β-convergence, distribution dynamics |
+        """)
+
+        st.markdown('<p class="section-title">🔍 Key Findings</p>', unsafe_allow_html=True)
+
+        # Compute quick stats
+        gdp_2010_total = df["gdp_2010"].sum()
+        gdp_2025_total = df["gdp_2025"].sum()
+        growth_total   = (gdp_2025_total - gdp_2010_total) / gdp_2010_total * 100
+        top_dist       = df.loc[df["gdp_2025"].idxmax(), "district_en"]
+        bot_dist       = df.loc[df["gdp_2025"].idxmin(), "district_en"]
+        ratio          = df["gdp_2025"].max() / df["gdp_2025"].min()
+
+        st.markdown(f"""
+        - Total real GDP grew from **{gdp_2010_total/1e6:,.1f}T** (2010) to **{gdp_2025_total/1e6:,.1f}T** (2025) 
+          — an increase of **{growth_total:.1f}%** over 15 years
+        - Highest GDP district (2025): **{top_dist}**
+        - Lowest GDP district (2025): **{bot_dist}**
+        - Max/Min ratio: **{ratio:,.0f}x** — indicating extreme regional disparity
+        - **β-divergence** detected: districts with higher initial GDP tend to grow faster,
+          suggesting regional inequality is widening
+        """)
+
+    st.markdown("---")
+    st.markdown('<p class="section-title">⚙️ How to Use</p>', unsafe_allow_html=True)
+    u1, u2, u3 = st.columns(3)
+    with u1:
+        st.markdown("""
+        **🔽 Filter (Sidebar)**  
+        Select by Island → Province → District to zoom into specific regions.
+        Use the Year slider to change the reference year for all charts.
+        """)
+    with u2:
+        st.markdown("""
+        **📥 Download Charts**  
+        Each chart has a Download button to export as interactive HTML — 
+        ready to embed in WordPress or share via email.
+        """)
+    with u3:
+        st.markdown("""
+        **📉 Convergence Analysis**  
+        Use Log GDP toggle for standard convergence analysis.
+        OLS results show whether poorer districts are catching up (β-convergence)
+        or falling further behind (β-divergence).
+        """)
+
+    st.markdown("---")
+    st.caption("Dashboard built with Streamlit & Plotly · Data: BPS via quarcs-lab/indonesia514 · INDEF 2025")
+
+
+elif "Home" in page:
     st.markdown("""
     <div class="main-header">
         <h1>🇮🇩 GDP Indonesia — 514 Districts</h1>
