@@ -169,7 +169,7 @@ if "Overview" in page:
     st.markdown("""
     <div class="main-header">
         <h1>🇮🇩 GDP Indonesia — 514 Districts Dashboard</h1>
-        <p>Regional Economic Analysis · 2010–2025 · Institute for Development of Economics and Finance (INDEF)</p>
+        <p>Regional Economic Analysis · 2010–2025</p>
     </div>""", unsafe_allow_html=True)
 
     st.markdown('<p class="section-title">About This Dashboard</p>', unsafe_allow_html=True)
@@ -258,7 +258,7 @@ if "Overview" in page:
         """)
 
     st.markdown("---")
-    st.caption("Dashboard built with Streamlit & Plotly · Data: BPS via quarcs-lab/indonesia514 · INDEF 2025")
+    st.caption("Dashboard built with Streamlit & Plotly · Data: BPS via quarcs-lab/indonesia514")
 
 
 elif "Home" in page:
