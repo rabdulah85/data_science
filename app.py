@@ -169,7 +169,7 @@ if "Overview" in page:
     st.markdown("""
     <div class="main-header">
         <h1>🇮🇩 GDP Indonesia — 514 Districts Dashboard</h1>
-        <p>Regional Economic Analysis · 2010–2025</p>
+        <p>Regional Economic Analysis · 2010–2025 · Institute for Development of Economics and Finance (INDEF)</p>
     </div>""", unsafe_allow_html=True)
 
     st.markdown('<p class="section-title">About This Dashboard</p>', unsafe_allow_html=True)
@@ -258,7 +258,17 @@ if "Overview" in page:
         """)
 
     st.markdown("---")
-    st.caption("Dashboard built with Streamlit & Plotly · Data: BPS via quarcs-lab/indonesia514")
+    st.markdown("---")
+    st.markdown("""
+    <small>
+    📊 <b>Primary Data Source:</b> 
+    <a href="https://www.bps.go.id/id/statistics-table/2/MjE5NCMy/-seri-2010--pdrb-atas-dasar-harga-konstan--2010-100--menurut-pengeluaran-kabupaten-kota--milyar-rupiah-.html" target="_blank">
+    [SERI 2010] PDRB Atas Dasar Harga Konstan (2010=100) Menurut Pengeluaran Kabupaten/Kota — Badan Pusat Statistik Indonesia
+    </a><br>
+    🗂️ <b>Dataset Repository:</b> <a href="https://github.com/quarcs-lab/indonesia514" target="_blank">quarcs-lab/indonesia514</a> · 
+    Built with Streamlit & Plotly · INDEF 2025
+    </small>
+    """, unsafe_allow_html=True)
 
 
 elif "Home" in page:
