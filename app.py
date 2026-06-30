@@ -577,5 +577,13 @@ elif "Data" in page:
         df_show = df_show[df_show["district_en"].str.contains(search, case=False)]
     df_show.columns = ["District","Province","Island"] + [str(y) for y in gdp_years]
     st.dataframe(df_show.reset_index(drop=True), use_container_width=True, height=450)
-    csv = df_show.to_csv(index=False).encode("utf-8")
-    st.download_button("⬇️ Download CSV", csv, f"gdp_indonesia_{tahun_sel}.csv", "text/csv")
+
+    st.markdown("---")
+    st.markdown("""
+    <small>
+    📊 <b>Original Data Source:</b><br>
+    <a href="https://www.bps.go.id/id/statistics-table/2/MjE5NCMy/-seri-2010--pdrb-atas-dasar-harga-konstan--2010-100--menurut-pengeluaran-kabupaten-kota--milyar-rupiah-.html" target="_blank">
+    [SERI 2010] PDRB Atas Dasar Harga Konstan (2010=100) Menurut Pengeluaran Kabupaten/Kota — Badan Pusat Statistik Indonesia
+    </a>
+    </small>
+    """, unsafe_allow_html=True)
