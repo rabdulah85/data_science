@@ -569,21 +569,35 @@ elif "Convergence" in page:
 
 # ── DATA ──────────────────────────────────────
 elif "Data" in page:
-    st.markdown('<p class="section-title">📋 Complete Data Table</p>', unsafe_allow_html=True)
-    search = st.text_input("🔍 Search district/city...", "")
-    cols_show = ["district_en","province_en","island_en"] + [f"gdp_{y}" for y in gdp_years]
-    df_show = df_fil[cols_show].copy()
-    if search:
-        df_show = df_show[df_show["district_en"].str.contains(search, case=False)]
-    df_show.columns = ["District","Province","Island"] + [str(y) for y in gdp_years]
-    st.dataframe(df_show.reset_index(drop=True), use_container_width=True, height=450)
+    st.markdown('<p class="section-title">📋 Data Source</p>', unsafe_allow_html=True)
+    st.markdown("""
+    This dashboard does not provide raw data downloads. All GDP figures displayed are derived 
+    from official statistics published by **Badan Pusat Statistik (BPS) Indonesia**.
+
+    For the complete and authoritative dataset, please refer to the original source below.
+    """)
+
+    st.markdown("""
+    <div class="kpi-card" style="text-align:left; padding:1.5rem;">
+        <div class="kpi-label">📊 Original Data Source</div>
+        <div style="margin-top:0.5rem; font-size:1rem; font-weight:600; color:#1a3a5c;">
+            [SERI 2010] PDRB Atas Dasar Harga Konstan (2010=100)<br>Menurut Pengeluaran Kabupaten/Kota
+        </div>
+        <div style="margin-top:0.3rem; color:#6b7c93; font-size:0.85rem;">
+            Badan Pusat Statistik Indonesia (BPS)
+        </div>
+        <div style="margin-top:0.8rem;">
+            <a href="https://www.bps.go.id/id/statistics-table/2/MjE5NCMy/-seri-2010--pdrb-atas-dasar-harga-konstan--2010-100--menurut-pengeluaran-kabupaten-kota--milyar-rupiah-.html" target="_blank">
+            🔗 Visit BPS Official Website
+            </a>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
     st.markdown("---")
     st.markdown("""
-    <small>
-    📊 <b>Original Data Source:</b><br>
-    <a href="https://www.bps.go.id/id/statistics-table/2/MjE5NCMy/-seri-2010--pdrb-atas-dasar-harga-konstan--2010-100--menurut-pengeluaran-kabupaten-kota--milyar-rupiah-.html" target="_blank">
-    [SERI 2010] PDRB Atas Dasar Harga Konstan (2010=100) Menurut Pengeluaran Kabupaten/Kota — Badan Pusat Statistik Indonesia
-    </a>
+    <small style='color:#6b7c93'>
+    Compiled dataset (2010–2025, 514 districts) used in this dashboard: 
+    <a href="https://github.com/quarcs-lab/indonesia514" target="_blank">quarcs-lab/indonesia514</a>
     </small>
     """, unsafe_allow_html=True)
