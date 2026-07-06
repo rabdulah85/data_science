@@ -2,9 +2,11 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import json, urllib.request
+import json, urllib.request, os
 import numpy as np
 from scipy import stats
+
+GRID_DATA_DIR = os.path.join(os.path.dirname(__file__), "data", "idn_grid")
 
 st.set_page_config(
     page_title="GDP Indonesia 514 Districts",
@@ -111,14 +113,23 @@ def load_geojson():
             else:
                 raise e
 
+@st.cache_data
+def load_grid_data():
+    grid = pd.read_csv(os.path.join(GRID_DATA_DIR, "grid_cells.csv"))
+    adm1 = pd.read_csv(os.path.join(GRID_DATA_DIR, "adm1.csv"))
+    adm0 = pd.read_csv(os.path.join(GRID_DATA_DIR, "adm0.csv"))
+    return grid, adm1, adm0
+
 df, df_long = load_data()
 geojson   = load_geojson()
 gdp_years = sorted([int(c.replace("gdp_","")) for c in df.columns if c.startswith("gdp_")])
+grid_df, adm1_df, adm0_df = load_grid_data()
+grid_years = sorted(grid_df["year"].unique().tolist())
 
 # ── SIDEBAR ───────────────────────────────────
 with st.sidebar:
     st.markdown("### 🗂️ Navigation")
-    page = st.radio("", ["📖 Overview","🏠 Home","🗺️ Map","📈 Time Series","🏆 Ranking","📋 Data","📉 Convergence"],
+    page = st.radio("", ["📖 Overview","🏠 Home","🗺️ Map","📈 Time Series","🏆 Ranking","📊 Descriptive","📉 Convergence","🔲 Grid GDP","📋 Data"],
                     label_visibility="collapsed")
     st.markdown("---")
     st.markdown("### ⚙️ Filter")
@@ -210,8 +221,10 @@ if "Overview" in page:
         | 🗺️ **Map** | Choropleth map of GDP across 514 districts |
         | 📈 **Time Series** | GDP trends and growth rates over time |
         | 🏆 **Ranking** | Top 20 districts and GDP vs growth scatter |
-        | 📋 **Data** | Full data table with CSV export |
+        | 📊 **Descriptive** | Summary stats, distribution, heatmap, transition dynamics |
         | 📉 **Convergence** | σ-convergence, β-convergence, distribution dynamics |
+        | 🔲 **Grid GDP** | 0.25° gridded GDP, PWT-rescaled, 2012–2022 |
+        | 📋 **Data** | Data source information & official links |
         """)
 
         st.markdown('<p class="section-title">🔍 Key Findings</p>', unsafe_allow_html=True)
@@ -567,6 +580,289 @@ elif "Convergence" in page:
                                font=FONT, hoverlabel=HOVER)
         st.plotly_chart(fig_dist, use_container_width=True)
 
+# ── DESCRIPTIVE STATISTICS ────────────────────
+elif "Descriptive" in page:
+    st.markdown("""
+    <div class="main-header">
+        <h1>📊 Descriptive Statistics</h1>
+        <p>Exploratory analysis of district GDP · distribution, correlation & transition dynamics</p>
+    </div>""", unsafe_allow_html=True)
+
+    if df_fil.empty:
+        st.warning("No data — adjust the filters in the sidebar.")
+    else:
+        use_log = st.toggle("Use Log GDP", value=True,
+                            help="Log transformation reduces skewness — recommended for GDP distributions")
+        gdp_cols = [f"gdp_{y}" for y in gdp_years]
+
+        # ── ① SUMMARY STATISTICS ──────────────────
+        st.markdown('<p class="section-title">① Summary Statistics — GDP by year (M Rp)</p>',
+                    unsafe_allow_html=True)
+        st.caption("Distribution of GDP across the selected districts, computed for every year.")
+
+        summ = df_fil[gdp_cols].describe().T
+        summ["skew"] = df_fil[gdp_cols].skew().values
+        summ["kurtosis"] = df_fil[gdp_cols].kurt().values
+        summ.index = [i.replace("gdp_", "") for i in summ.index]
+        summ.index.name = "Year"
+        summ = summ.rename(columns={"count": "N", "mean": "Mean", "std": "Std Dev", "min": "Min",
+                                    "25%": "Q1", "50%": "Median", "75%": "Q3", "max": "Max",
+                                    "skew": "Skewness", "kurtosis": "Kurtosis"})
+        st.dataframe(summ.style.format({c: "{:,.1f}" for c in summ.columns}),
+                     use_container_width=True, height=400)
+
+        vals_sel = df_fil[col_gdp].replace(0, np.nan).dropna()
+        k1, k2, k3, k4 = st.columns(4)
+        with k1:
+            st.markdown(f"""<div class="kpi-card"><div class="kpi-label">Mean GDP {tahun_sel}</div>
+                <div class="kpi-value">{vals_sel.mean():,.0f}</div>
+                <div class="kpi-sub">Billion Rp</div></div>""", unsafe_allow_html=True)
+        with k2:
+            st.markdown(f"""<div class="kpi-card"><div class="kpi-label">Median GDP {tahun_sel}</div>
+                <div class="kpi-value">{vals_sel.median():,.0f}</div>
+                <div class="kpi-sub">Billion Rp</div></div>""", unsafe_allow_html=True)
+        with k3:
+            st.markdown(f"""<div class="kpi-card"><div class="kpi-label">Std Dev</div>
+                <div class="kpi-value">{vals_sel.std():,.0f}</div>
+                <div class="kpi-sub">Billion Rp</div></div>""", unsafe_allow_html=True)
+        with k4:
+            st.markdown(f"""<div class="kpi-card"><div class="kpi-label">Skewness</div>
+                <div class="kpi-value">{vals_sel.skew():.2f}</div>
+                <div class="kpi-sub">{'Right-skewed' if vals_sel.skew() > 0 else 'Left-skewed'}</div></div>""",
+                unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # ── ② DISTRIBUTION ────────────────────────
+        st.markdown(f'<p class="section-title">② Distribution — GDP {tahun_sel}</p>', unsafe_allow_html=True)
+        st.caption("Histogram of the overall distribution and violin plots comparing islands.")
+
+        vals = df_fil[col_gdp].replace(0, np.nan).dropna()
+        plot_vals = np.log(vals) if use_log else vals
+        x_label = f"{'Log ' if use_log else ''}GDP {tahun_sel}"
+        df_d = pd.DataFrame({x_label: plot_vals.values,
+                             "Island": df_fil.loc[vals.index, "island_en"].values})
+
+        d1, d2 = st.columns(2)
+        with d1:
+            fig_hist = px.histogram(df_d, x=x_label, nbins=40, marginal="box",
+                                    template="plotly_white", color_discrete_sequence=["#0f6b8a"],
+                                    opacity=0.8)
+            fig_hist.update_layout(height=400, paper_bgcolor="white", plot_bgcolor="white",
+                                   font=FONT, hoverlabel=HOVER, bargap=0.05,
+                                   title_text="Histogram + Box", title_font_size=13)
+            st.plotly_chart(fig_hist, use_container_width=True)
+            buf_h = fig_hist.to_html(full_html=True, include_plotlyjs='cdn')
+            st.download_button("⬇️ Download Histogram (HTML)", buf_h, f"gdp_histogram_{tahun_sel}.html", "text/html")
+        with d2:
+            fig_vio = px.violin(df_d, x="Island", y=x_label, color="Island", box=True, points="outliers",
+                                template="plotly_white", color_discrete_sequence=px.colors.qualitative.Set2)
+            fig_vio.update_layout(height=400, paper_bgcolor="white", plot_bgcolor="white",
+                                  font=FONT, hoverlabel=HOVER, showlegend=False,
+                                  xaxis_tickangle=-25, title_text="Violin by Island", title_font_size=13)
+            st.plotly_chart(fig_vio, use_container_width=True)
+            buf_v = fig_vio.to_html(full_html=True, include_plotlyjs='cdn')
+            st.download_button("⬇️ Download Violin (HTML)", buf_v, f"gdp_violin_{tahun_sel}.html", "text/html")
+
+        st.markdown("---")
+
+        # ── ③ HEATMAP — Island × Year ─────────────
+        st.markdown('<p class="section-title">③ Heatmap — Mean GDP by Island × Year</p>',
+                    unsafe_allow_html=True)
+        st.caption("Each cell shows the average district GDP within an island, tracing growth over time.")
+
+        heat = df_fil.groupby("island_en")[gdp_cols].mean()
+        if use_log:
+            heat = np.log(heat.replace(0, np.nan))
+        heat.columns = [c.replace("gdp_", "") for c in heat.columns]
+        heat = heat.sort_index()
+        fig_heat = px.imshow(heat, aspect="auto", color_continuous_scale="Blues",
+                             text_auto=".1f",
+                             labels=dict(x="Year", y="Island",
+                                         color=f"{'Log ' if use_log else ''}Mean GDP"))
+        fig_heat.update_layout(height=max(320, len(heat) * 45), paper_bgcolor="white",
+                               font=FONT, hoverlabel=HOVER, margin=dict(l=5, r=5, t=10, b=10))
+        fig_heat.update_xaxes(side="bottom")
+        st.plotly_chart(fig_heat, use_container_width=True)
+        buf_heat = fig_heat.to_html(full_html=True, include_plotlyjs='cdn')
+        st.download_button("⬇️ Download Heatmap (HTML)", buf_heat, "gdp_heatmap_island_year.html", "text/html")
+
+        st.markdown("---")
+
+        # ── ④ TRANSITION DYNAMICS ─────────────────
+        first_y, last_y = gdp_years[0], gdp_years[-1]
+        st.markdown(f'<p class="section-title">④ Transition Dynamics — GDP mobility {first_y} → {last_y}</p>',
+                    unsafe_allow_html=True)
+        st.caption("Districts are split into 5 quintiles. Each row shows where districts that started in a "
+                   "quintile ended up — the diagonal means they stayed in place (low mobility).")
+
+        df_t = df_fil[[f"gdp_{first_y}", f"gdp_{last_y}"]].replace(0, np.nan).dropna()
+        if len(df_t) >= 10:
+            q_labels = ["Q1 (Lowest)", "Q2", "Q3", "Q4", "Q5 (Highest)"]
+            try:
+                q_start = pd.qcut(df_t[f"gdp_{first_y}"], 5, labels=q_labels)
+                q_end = pd.qcut(df_t[f"gdp_{last_y}"], 5, labels=q_labels)
+                trans = pd.crosstab(q_start, q_end, normalize="index") * 100
+                trans = trans.reindex(index=q_labels, columns=q_labels)
+                fig_tr = px.imshow(trans, text_auto=".0f", color_continuous_scale="Blues",
+                                   labels=dict(x=f"Quintile in {last_y}", y=f"Quintile in {first_y}",
+                                               color="% of districts"))
+                fig_tr.update_layout(height=420, paper_bgcolor="white", font=FONT, hoverlabel=HOVER,
+                                     margin=dict(l=5, r=5, t=10, b=10))
+                st.plotly_chart(fig_tr, use_container_width=True)
+                diag = np.diag(trans.fillna(0).values).mean()
+                st.info(f"📊 On average **{diag:.0f}%** of districts remained in their original quintile "
+                        f"between {first_y} and {last_y} — "
+                        f"{'high persistence (low mobility)' if diag >= 50 else 'moderate mobility'}.")
+                buf_tr = fig_tr.to_html(full_html=True, include_plotlyjs='cdn')
+                st.download_button("⬇️ Download Transition Matrix (HTML)", buf_tr,
+                                   "gdp_transition_matrix.html", "text/html")
+            except ValueError:
+                st.warning("Not enough distinct GDP values to build quintiles for the current filter.")
+        else:
+            st.warning("Select at least 10 districts to compute the transition matrix.")
+
+        st.markdown("---")
+
+        # ── ⑤ EXTREME VALUES ──────────────────────
+        st.markdown(f'<p class="section-title">⑤ Extreme Values — GDP {tahun_sel}</p>', unsafe_allow_html=True)
+        st.caption("The 10 highest and 10 lowest districts by GDP in the selected year.")
+        ext = df_fil[["district_en", "province_en", "island_en", col_gdp]].copy()
+        ext.columns = ["District", "Province", "Island", f"GDP {tahun_sel}"]
+        e1, e2 = st.columns(2)
+        with e1:
+            st.markdown("**🔝 Top 10**")
+            st.dataframe(ext.nlargest(10, f"GDP {tahun_sel}").reset_index(drop=True)
+                         .style.format({f"GDP {tahun_sel}": "{:,.0f}"}), use_container_width=True, height=390)
+        with e2:
+            st.markdown("**🔻 Bottom 10**")
+            st.dataframe(ext.nsmallest(10, f"GDP {tahun_sel}").reset_index(drop=True)
+                         .style.format({f"GDP {tahun_sel}": "{:,.0f}"}), use_container_width=True, height=390)
+
+# ── GRID GDP (0.25°) ──────────────────────────
+elif "Grid" in page:
+    st.markdown("""
+    <div class="main-header">
+        <h1>🔲 Grid GDP — 0.25° Cells</h1>
+        <p>Gridded local GDP for Indonesia · 2012–2022 · PWT 11.0-rescaled, GADM 4.10 geography</p>
+    </div>""", unsafe_allow_html=True)
+
+    g1, g2, g3 = st.columns([2,2,1])
+    with g1:
+        grid_year = st.select_slider("Year", options=grid_years, value=grid_years[-1], key="grid_year")
+    with g2:
+        metric_label = st.selectbox(
+            "Metric",
+            ["GDP per capita (US$ PPP)", "Log GDP per capita", "Total Cell GDP (mil. US$ PPP)", "Population (persons)"],
+            key="grid_metric"
+        )
+    with g3:
+        grid_scale = st.selectbox("Color Scale", ["Viridis","Plasma","YlOrRd","Blues","RdYlGn"], index=0, key="grid_scale")
+
+    metric_map = {
+        "GDP per capita (US$ PPP)": "gdppc",
+        "Log GDP per capita": "ln_gdppc",
+        "Total Cell GDP (mil. US$ PPP)": "gdp_pwt",
+        "Population (persons)": "pop_pwt",
+    }
+    metric_col = metric_map[metric_label]
+
+    gy = grid_df[grid_df["year"] == grid_year].copy()
+    ay = adm0_df[adm0_df["year"] == grid_year].iloc[0]
+
+    st.markdown('<p class="section-title">Key Indicators</p>', unsafe_allow_html=True)
+    k1,k2,k3,k4 = st.columns(4)
+    with k1:
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-label">National GDP {grid_year}</div>
+            <div class="kpi-value">{ay['gdp_pwt']/1e6:,.2f}T</div>
+            <div class="kpi-sub">Trillion 2021 US$ PPP</div></div>""", unsafe_allow_html=True)
+    with k2:
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-label">Population</div>
+            <div class="kpi-value">{ay['pop_pwt']:,.1f}M</div>
+            <div class="kpi-sub">Million persons</div></div>""", unsafe_allow_html=True)
+    with k3:
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-label">GDP per Capita</div>
+            <div class="kpi-value">${ay['gdppc']:,.0f}</div>
+            <div class="kpi-sub">2021 US$ PPP</div></div>""", unsafe_allow_html=True)
+    with k4:
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-label">Grid Cells</div>
+            <div class="kpi-value">{len(gy):,}</div>
+            <div class="kpi-sub">0.25° resolution</div></div>""", unsafe_allow_html=True)
+
+    st.markdown("")
+    st.markdown(f'<p class="section-title">Grid Map — {metric_label} ({grid_year})</p>', unsafe_allow_html=True)
+    st.caption("Each point is a 0.25° × 0.25° grid cell centroid. Censored (near-zero population) cells are excluded. "
+               "Color scale is clipped to the 2nd–98th percentile so a few extreme low-population cells don't wash out the map.")
+
+    gy_plot = gy[gy[metric_col].notna()].copy()
+    if metric_col in ("gdppc", "ln_gdppc"):
+        gy_plot = gy_plot[gy_plot["gdppc"] > 0]
+
+    vmin, vmax = gy_plot[metric_col].quantile([0.02, 0.98])
+
+    fig_grid = px.scatter_mapbox(
+        gy_plot, lat="latitude", lon="longitude", color=metric_col,
+        color_continuous_scale=grid_scale, range_color=[vmin, vmax],
+        mapbox_style="carto-positron", zoom=3.6, center={"lat": -2.2, "lon": 118},
+        hover_name="name_2",
+        hover_data={"name_1": True, metric_col: ":,.1f", "latitude": False, "longitude": False},
+        labels={metric_col: metric_label, "name_1": "Province", "name_2": "Regency/City"},
+        opacity=0.9,
+    )
+    fig_grid.update_traces(marker=dict(size=9))
+    fig_grid.update_layout(height=560, margin=dict(l=0,r=0,t=0,b=0),
+                           coloraxis_colorbar=dict(title=metric_label, thickness=14, len=0.6),
+                           paper_bgcolor="white", font=FONT, hoverlabel=HOVER)
+    st.plotly_chart(fig_grid, use_container_width=True)
+    buf_grid = fig_grid.to_html(full_html=True, include_plotlyjs='cdn')
+    st.download_button("⬇️ Download Grid Map (HTML)", buf_grid, f"grid_gdp_{grid_year}.html", "text/html")
+
+    st.markdown("---")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown('<p class="section-title">National GDP per Capita Trend (2012–2022)</p>', unsafe_allow_html=True)
+        fig_trend = px.line(adm0_df.sort_values("year"), x="year", y="gdppc", markers=True,
+                            labels={"gdppc": "GDP per Capita (US$ PPP)", "year": "Year"},
+                            template="plotly_white", color_discrete_sequence=["#0f6b8a"])
+        fig_trend.update_traces(line_width=2.5, marker_size=7)
+        fig_trend.update_layout(height=380, paper_bgcolor="white", plot_bgcolor="white",
+                                font=FONT, hoverlabel=HOVER)
+        st.plotly_chart(fig_trend, use_container_width=True)
+
+    with c2:
+        st.markdown(f'<p class="section-title">Top 15 Provinces by GDP per Capita ({grid_year})</p>', unsafe_allow_html=True)
+        top_prov = adm1_df[adm1_df["year"] == grid_year].nlargest(15, "gdppc")[["name","gdppc"]].sort_values("gdppc")
+        fig_prov = px.bar(top_prov, x="gdppc", y="name", orientation="h",
+                          color="gdppc", color_continuous_scale="Blues",
+                          labels={"gdppc": "GDP per Capita (US$ PPP)", "name": ""},
+                          template="plotly_white")
+        fig_prov.update_layout(height=380, margin=dict(l=5,r=5,t=10,b=10),
+                               coloraxis_showscale=False, paper_bgcolor="white", plot_bgcolor="white",
+                               font=FONT, hoverlabel=HOVER)
+        st.plotly_chart(fig_prov, use_container_width=True)
+
+    st.markdown("---")
+
+    st.markdown(f'<p class="section-title">Distribution of Cell GDP per Capita — {grid_year}</p>', unsafe_allow_html=True)
+    st.caption("Log GDP per capita across all 0.25° grid cells (censored/zero-population cells excluded).")
+    dist_vals = gy[gy["gdppc"] > 0]["ln_gdppc"].dropna()
+    fig_gdist = px.histogram(dist_vals, x="ln_gdppc", nbins=50, marginal="box",
+                             template="plotly_white", color_discrete_sequence=["#0f6b8a"], opacity=0.8)
+    fig_gdist.update_layout(height=360, paper_bgcolor="white", plot_bgcolor="white",
+                            font=FONT, hoverlabel=HOVER, bargap=0.05,
+                            xaxis_title="Log GDP per Capita", showlegend=False)
+    st.plotly_chart(fig_gdist, use_container_width=True)
+
+    st.markdown("---")
+    st.markdown("""
+    <small style='color:#6b7c93'>
+    📊 <b>Data:</b> Gridded local GDP rescaled to <b>Penn World Table 11.0</b> national accounts
+    (0.25° cells, constant 2021 PPP), with <b>GADM 4.10</b> administrative geography. Source collection:
+    <i>Local GDP Estimates Around the World</i> (Rossi-Hansberg &amp; Zhang) · PWT 11.0 (Feenstra, Inklaar &amp; Timmer) · GADM 4.10.
+    </small>
+    """, unsafe_allow_html=True)
+
 # ── DATA ──────────────────────────────────────
 elif "Data" in page:
     st.markdown('<p class="section-title">📋 Data Source</p>', unsafe_allow_html=True)
@@ -581,10 +877,10 @@ elif "Data" in page:
     <div class="kpi-card" style="text-align:left; padding:1.5rem;">
         <div class="kpi-label">📊 Original Data Source</div>
         <div style="margin-top:0.5rem; font-size:1rem; font-weight:600; color:#1a3a5c;">
-            [SERI 2010] PDRB Atas Dasar Harga Konstan (2010=100)<br>Menurut Pengeluaran Kabupaten/Kota
+            [SERIES 2010] GRDP at Constant Prices (2010=100)<br>by Expenditure, Regency/City
         </div>
         <div style="margin-top:0.3rem; color:#6b7c93; font-size:0.85rem;">
-            Badan Pusat Statistik Indonesia (BPS)
+            Statistics Indonesia (BPS — Badan Pusat Statistik)
         </div>
         <div style="margin-top:0.8rem;">
             <a href="https://www.bps.go.id/id/statistics-table/2/MjE5NCMy/-seri-2010--pdrb-atas-dasar-harga-konstan--2010-100--menurut-pengeluaran-kabupaten-kota--milyar-rupiah-.html" target="_blank">

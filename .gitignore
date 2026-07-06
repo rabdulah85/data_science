@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+
+# Nested Hugging Face Space clone (kept local, not part of this repo)
+gdp-indonesia/
