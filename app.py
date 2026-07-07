@@ -121,6 +121,32 @@ def load_grid_data():
     adm0 = pd.read_csv(os.path.join(GRID_DATA_DIR, "adm0.csv"))
     return grid, adm1, adm0
 
+@st.cache_data
+def build_grid_geojson(coords, cell=0.25):
+    """Build a GeoJSON of square 0.25° cells from centroid (lon, lat) pairs.
+
+    Feature id = "lon_lat" (rounded) so it can be matched to a dataframe column
+    of the same key. `coords` is a tuple of (lon, lat) tuples so the result is
+    cached across years/metrics (cell geometry never changes)."""
+    h = cell / 2.0
+    feats = []
+    for lon, lat in coords:
+        cid = f"{lon:.3f}_{lat:.3f}"
+        feats.append({
+            "type": "Feature",
+            "id": cid,
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[
+                    [lon - h, lat - h], [lon + h, lat - h],
+                    [lon + h, lat + h], [lon - h, lat + h],
+                    [lon - h, lat - h],
+                ]],
+            },
+            "properties": {},
+        })
+    return {"type": "FeatureCollection", "features": feats}
+
 # ── ESDA / inequality helpers (scipy + numpy only, no extra deps) ──
 def _gini(x):
     x = np.sort(np.asarray(x, dtype=float))
@@ -883,7 +909,7 @@ elif "Grid" in page:
 
     st.markdown("")
     st.markdown(f'<p class="section-title">Grid Map — {metric_label} ({grid_year})</p>', unsafe_allow_html=True)
-    st.caption("Each point is a 0.25° × 0.25° grid cell centroid. Censored (near-zero population) cells are excluded. "
+    st.caption("Each square is a 0.25° × 0.25° grid cell. Censored (near-zero population) cells are excluded. "
                "Color scale is clipped to the 2nd–98th percentile so a few extreme low-population cells don't wash out the map.")
 
     gy_plot = gy[gy[metric_col].notna()].copy()
@@ -892,16 +918,22 @@ elif "Grid" in page:
 
     vmin, vmax = gy_plot[metric_col].quantile([0.02, 0.98])
 
-    fig_grid = px.scatter_mapbox(
-        gy_plot, lat="latitude", lon="longitude", color=metric_col,
+    # Key each cell to its square polygon (built once, cached across years/metrics).
+    gy_plot["cell_id"] = (gy_plot["longitude"].map(lambda v: f"{v:.3f}")
+                          + "_" + gy_plot["latitude"].map(lambda v: f"{v:.3f}"))
+    coords = tuple(map(tuple, grid_df[["longitude", "latitude"]].drop_duplicates().to_numpy()))
+    grid_geojson = build_grid_geojson(coords)
+
+    fig_grid = px.choropleth_mapbox(
+        gy_plot, geojson=grid_geojson, locations="cell_id", color=metric_col,
         color_continuous_scale=grid_scale, range_color=[vmin, vmax],
         mapbox_style="carto-positron", zoom=3.6, center={"lat": -2.2, "lon": 118},
         hover_name="name_2",
-        hover_data={"name_1": True, metric_col: ":,.1f", "latitude": False, "longitude": False},
+        hover_data={"name_1": True, metric_col: ":,.1f", "cell_id": False},
         labels={metric_col: metric_label, "name_1": "Province", "name_2": "Regency/City"},
-        opacity=0.9,
+        opacity=1.0,
     )
-    fig_grid.update_traces(marker=dict(size=9))
+    fig_grid.update_traces(marker_line_width=0)
     fig_grid.update_layout(height=560, margin=dict(l=0,r=0,t=0,b=0),
                            coloraxis_colorbar=dict(title=metric_label, thickness=14, len=0.6),
                            paper_bgcolor="white", font=FONT, hoverlabel=HOVER)
