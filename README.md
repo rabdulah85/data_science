@@ -1,6 +1,6 @@
 ---
 title: Gdp Indonesia
-emoji: 🇮🇩
+emoji: 📊
 colorFrom: red
 colorTo: red
 sdk: docker
@@ -9,7 +9,7 @@ tags:
 - streamlit
 pinned: false
 license: mit
-short_description: Indonesia GDP dashboard — districts, grid GDP, convergence & ESDA
+short_description: Indonesia regional & grid GDP dashboard
 ---
 
 # GDP Indonesia Dashboard
