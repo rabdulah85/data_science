@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 import json, urllib.request, os
 import numpy as np
 from scipy import stats
+from scipy.spatial import cKDTree
 
 GRID_DATA_DIR = os.path.join(os.path.dirname(__file__), "data", "idn_grid")
 
@@ -119,6 +120,97 @@ def load_grid_data():
     adm1 = pd.read_csv(os.path.join(GRID_DATA_DIR, "adm1.csv"))
     adm0 = pd.read_csv(os.path.join(GRID_DATA_DIR, "adm0.csv"))
     return grid, adm1, adm0
+
+# ── ESDA / inequality helpers (scipy + numpy only, no extra deps) ──
+def _gini(x):
+    x = np.sort(np.asarray(x, dtype=float))
+    n = x.size
+    if n == 0 or x.sum() == 0:
+        return np.nan
+    cum = np.cumsum(x)
+    return (n + 1 - 2 * np.sum(cum) / cum[-1]) / n
+
+def _theil(x):
+    x = np.asarray(x, dtype=float)
+    x = x[x > 0]
+    if x.size == 0:
+        return np.nan
+    mu = x.mean()
+    return float(np.mean((x / mu) * np.log(x / mu)))
+
+@st.cache_data(show_spinner=False)
+def compute_esda(year, k=8, permutations=999, seed=42):
+    """KNN-based ESDA on log GDP per capita for one year -> (per-cell df, globals dict)."""
+    sub = (grid_df[(grid_df["year"] == year) & (grid_df["gdppc"] > 0)]
+           [["latitude", "longitude", "ln_gdppc", "name_1", "name_2"]]
+           .dropna().reset_index(drop=True))
+    n = len(sub)
+    coords = sub[["latitude", "longitude"]].to_numpy()
+    x = sub["ln_gdppc"].to_numpy()
+    _, idx = cKDTree(coords).query(coords, k=k + 1)   # column 0 = self
+    nb = idx[:, 1:]                                    # k nearest neighbours
+    z = x - x.mean()
+    ss = np.sum(z ** 2)
+    m2 = ss / n
+    lag_z = z[nb].mean(axis=1)                         # row-standardised spatial lag
+
+    # ① Global Moran's I + permutation inference
+    I = np.sum(z * lag_z) / ss
+    rng = np.random.default_rng(seed)
+    sim = np.empty(permutations)
+    for p in range(permutations):
+        zp = rng.permutation(z)
+        sim[p] = np.sum(zp * zp[nb].mean(axis=1)) / ss
+    if I >= sim.mean():
+        p_sim = (np.sum(sim >= I) + 1) / (permutations + 1)
+    else:
+        p_sim = (np.sum(sim <= I) + 1) / (permutations + 1)
+    z_score = (I - sim.mean()) / sim.std()
+
+    # ② Local Moran's I (LISA) + conditional-permutation pseudo p-values
+    Ii = (z / m2) * lag_z
+    P = 199
+    sim_lags = np.empty((P, n))
+    for p in range(P):
+        ridx = rng.integers(0, n, size=(n, k))
+        sim_lags[p] = z[ridx].mean(axis=1)
+    sim_Ii = (z / m2)[None, :] * sim_lags
+    ge = np.sum(sim_Ii >= Ii[None, :], axis=0)
+    le = np.sum(sim_Ii <= Ii[None, :], axis=0)
+    p_lisa = (np.minimum(ge, le) + 1) / (P + 1)
+    sig = p_lisa <= 0.05
+    quad = np.where(z > 0, np.where(lag_z > 0, "High-High", "High-Low"),
+                    np.where(lag_z > 0, "Low-High", "Low-Low"))
+    cluster = np.where(sig, quad, "Not significant")
+
+    # ③ Getis-Ord Gi* (binary weights, self included)
+    Wi = k + 1
+    x_star = x[idx[:, :k + 1]].sum(axis=1)
+    S = x.std()
+    denom = S * np.sqrt((n * Wi - Wi ** 2) / (n - 1))
+    Gi = (x_star - x.mean() * Wi) / denom
+
+    sub["z"], sub["lag_z"] = z, lag_z
+    sub["local_I"], sub["p_lisa"], sub["cluster"] = Ii, p_lisa, cluster
+    sub["Gi_z"] = Gi
+    sub["hotspot"] = np.where(Gi >= 2.58, "Hot spot (99%)",
+                     np.where(Gi >= 1.96, "Hot spot (95%)",
+                     np.where(Gi <= -2.58, "Cold spot (99%)",
+                     np.where(Gi <= -1.96, "Cold spot (95%)", "Not significant"))))
+    return sub, {"I": float(I), "p_sim": float(p_sim), "z_score": float(z_score),
+                 "EI": -1.0 / (n - 1), "n": int(n), "k": int(k), "permutations": permutations}
+
+@st.cache_data(show_spinner=False)
+def moran_by_year(k=8):
+    out = []
+    for yy in grid_years:
+        sub = grid_df[(grid_df["year"] == yy) & (grid_df["gdppc"] > 0)][["latitude", "longitude", "ln_gdppc"]].dropna()
+        coords = sub[["latitude", "longitude"]].to_numpy()
+        x = sub["ln_gdppc"].to_numpy()
+        _, idx = cKDTree(coords).query(coords, k=k + 1)
+        z = x - x.mean()
+        out.append({"Year": yy, "Moran_I": float(np.sum(z * z[idx[:, 1:]].mean(axis=1)) / np.sum(z ** 2))})
+    return pd.DataFrame(out)
 
 df, df_long = load_data()
 geojson   = load_geojson()
@@ -853,6 +945,197 @@ elif "Grid" in page:
                             font=FONT, hoverlabel=HOVER, bargap=0.05,
                             xaxis_title="Log GDP per Capita", showlegend=False)
     st.plotly_chart(fig_gdist, use_container_width=True)
+
+    st.markdown("---")
+
+    # ══════════ COMPLETE DESCRIPTIVE STATISTICS ══════════
+    st.markdown('<p class="section-title">📊 Complete Descriptive Statistics — Grid Cells</p>', unsafe_allow_html=True)
+    st.caption(f"Full summary of **{metric_label}** across all populated 0.25° cells in {grid_year}, "
+               "with inequality measures and their evolution over time. Censored/zero-population cells are excluded.")
+
+    dv = gy[gy["gdppc"] > 0][metric_col].dropna()
+    dv = dv[np.isfinite(dv)]
+    gppc_sel = gy[gy["gdppc"] > 0]["gdppc"]
+    desc = {
+        "N (cells)":   f"{dv.size:,}",
+        "Mean":        f"{dv.mean():,.2f}",
+        "Std. Dev.":   f"{dv.std():,.2f}",
+        "CV (%)":      f"{100 * dv.std() / dv.mean():,.1f}",
+        "Min":         f"{dv.min():,.2f}",
+        "Q1 (25%)":    f"{dv.quantile(.25):,.2f}",
+        "Median":      f"{dv.median():,.2f}",
+        "Q3 (75%)":    f"{dv.quantile(.75):,.2f}",
+        "Max":         f"{dv.max():,.2f}",
+        "IQR":         f"{dv.quantile(.75) - dv.quantile(.25):,.2f}",
+        "Skewness":    f"{stats.skew(dv):,.3f}",
+        "Kurtosis":    f"{stats.kurtosis(dv):,.3f}",
+        "Gini (gdppc)":  f"{_gini(gppc_sel):,.3f}",
+        "Theil (gdppc)": f"{_theil(gppc_sel):,.3f}",
+    }
+    dstat = pd.DataFrame({"Statistic": list(desc.keys()), f"{metric_label} · {grid_year}": list(desc.values())})
+
+    dcol1, dcol2 = st.columns([1, 1])
+    with dcol1:
+        st.dataframe(dstat, use_container_width=True, height=530, hide_index=True)
+    with dcol2:
+        rows = []
+        for yy in grid_years:
+            gg = grid_df[(grid_df["year"] == yy) & (grid_df["gdppc"] > 0)]
+            v = gg[metric_col].dropna()
+            rows.append({"Year": yy, "N": v.size, "Mean": v.mean(), "Median": v.median(),
+                         "Std": v.std(), "CV%": 100 * v.std() / v.mean(), "Gini": _gini(gg["gdppc"])})
+        by_year = pd.DataFrame(rows)
+        st.dataframe(
+            by_year.style.format({"Mean": "{:,.1f}", "Median": "{:,.1f}", "Std": "{:,.1f}",
+                                  "CV%": "{:,.1f}", "Gini": "{:,.3f}"}),
+            use_container_width=True, height=530, hide_index=True)
+
+    icol1, icol2 = st.columns(2)
+    with icol1:
+        st.markdown('<p class="section-title">Spatial Inequality Over Time</p>', unsafe_allow_html=True)
+        ineq = []
+        for yy in grid_years:
+            gg = grid_df[(grid_df["year"] == yy) & (grid_df["gdppc"] > 0)]["gdppc"]
+            ineq.append({"Year": yy, "Gini": _gini(gg), "Theil": _theil(gg)})
+        idf = pd.DataFrame(ineq)
+        fig_ineq = go.Figure()
+        fig_ineq.add_trace(go.Scatter(x=idf.Year, y=idf.Gini, name="Gini", mode="lines+markers",
+                                      line=dict(color="#0f6b8a", width=2.5)))
+        fig_ineq.add_trace(go.Scatter(x=idf.Year, y=idf.Theil, name="Theil", mode="lines+markers",
+                                      line=dict(color="#e07a3f", width=2.5), yaxis="y2"))
+        fig_ineq.update_layout(height=360, paper_bgcolor="white", plot_bgcolor="white", font=FONT, hoverlabel=HOVER,
+                               yaxis=dict(title="Gini"), yaxis2=dict(title="Theil", overlaying="y", side="right"),
+                               legend=dict(orientation="h", y=1.15), margin=dict(l=10, r=10, t=30, b=10))
+        st.plotly_chart(fig_ineq, use_container_width=True)
+    with icol2:
+        st.markdown('<p class="section-title">Distribution by Year — Log GDP per Capita</p>', unsafe_allow_html=True)
+        fig_by = px.box(grid_df[grid_df["gdppc"] > 0], x="year", y="ln_gdppc",
+                        template="plotly_white", color_discrete_sequence=["#0f6b8a"])
+        fig_by.update_layout(height=360, paper_bgcolor="white", plot_bgcolor="white", font=FONT, hoverlabel=HOVER,
+                             xaxis_title="Year", yaxis_title="Log GDP per Capita")
+        st.plotly_chart(fig_by, use_container_width=True)
+
+    st.markdown("---")
+
+    # ══════════ ESDA — EXPLORATORY SPATIAL DATA ANALYSIS ══════════
+    st.markdown('<p class="section-title">🌐 ESDA — Exploratory Spatial Data Analysis</p>', unsafe_allow_html=True)
+    st.caption("Spatial autocorrelation of **log GDP per capita** across 0.25° cells, using a "
+               "k-nearest-neighbour, row-standardised spatial weights matrix. "
+               "It answers: *is local prosperity spatially clustered, or randomly scattered across space?*")
+
+    ek1, ek2 = st.columns([1, 3])
+    with ek1:
+        kk = st.slider("Neighbours (k)", 4, 16, 8, key="esda_k")
+    with ek2:
+        st.caption(f"Spatial weights: **{kk}-nearest-neighbour** (row-standardised). "
+                   f"Inference: 999 permutations (global), 199 conditional permutations (local). Year: **{grid_year}**.")
+
+    esda_df, G = compute_esda(grid_year, k=kk)
+
+    LISA_COLORS = {"High-High": "#c0392b", "Low-Low": "#2874a6", "Low-High": "#aed6f1",
+                   "High-Low": "#f5b7b1", "Not significant": "#e5e8e8"}
+    HOT_COLORS = {"Hot spot (99%)": "#922b21", "Hot spot (95%)": "#e6796b", "Cold spot (99%)": "#1a5276",
+                  "Cold spot (95%)": "#5499c7", "Not significant": "#e5e8e8"}
+    order_lisa = ["High-High", "Low-Low", "Low-High", "High-Low", "Not significant"]
+    order_hot = ["Hot spot (99%)", "Hot spot (95%)", "Cold spot (99%)", "Cold spot (95%)", "Not significant"]
+
+    # ① Global Moran's I
+    st.markdown('<p class="section-title">① Global Moran\'s I — overall spatial clustering</p>', unsafe_allow_html=True)
+    gm1, gm2, gm3, gm4 = st.columns(4)
+    with gm1:
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-label">Moran's I</div>
+            <div class="kpi-value">{G['I']:.3f}</div>
+            <div class="kpi-sub">Expected: {G['EI']:.4f}</div></div>""", unsafe_allow_html=True)
+    with gm2:
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-label">z-score</div>
+            <div class="kpi-value">{G['z_score']:,.1f}</div>
+            <div class="kpi-sub">std. devs vs. random</div></div>""", unsafe_allow_html=True)
+    with gm3:
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-label">Pseudo p-value</div>
+            <div class="kpi-value">{G['p_sim']:.3f}</div>
+            <div class="kpi-sub">{G['permutations']} permutations</div></div>""", unsafe_allow_html=True)
+    with gm4:
+        verdict = "Clustered" if (G['I'] > G['EI'] and G['p_sim'] <= 0.05) else \
+                  ("Dispersed" if (G['I'] < G['EI'] and G['p_sim'] <= 0.05) else "Random")
+        st.markdown(f"""<div class="kpi-card"><div class="kpi-label">Pattern</div>
+            <div class="kpi-value">{verdict}</div>
+            <div class="kpi-sub">at 5% significance</div></div>""", unsafe_allow_html=True)
+
+    sig_txt = ("statistically significant (p ≤ 0.05)" if G['p_sim'] <= 0.05 else "not significant")
+    st.markdown(f"<small style='color:#6b7c93'>A positive Moran's I of <b>{G['I']:.3f}</b> "
+                f"(vs. an expected <b>{G['EI']:.4f}</b> under spatial randomness), {sig_txt}, indicates that "
+                f"cells with similar log GDP per capita <b>cluster together</b> — rich areas neighbour rich areas, "
+                f"poor neighbour poor. Explore <b>where</b> below.</small>", unsafe_allow_html=True)
+
+    st.markdown("")
+    sc1, sc2 = st.columns(2)
+    with sc1:
+        st.markdown('<p class="section-title">② Moran Scatterplot</p>', unsafe_allow_html=True)
+        fig_ms = px.scatter(esda_df, x="z", y="lag_z", color="cluster",
+                            color_discrete_map=LISA_COLORS, category_orders={"cluster": order_lisa},
+                            hover_name="name_2", hover_data={"name_1": True, "z": ":.2f", "lag_z": ":.2f"},
+                            labels={"z": "Log GDPpc (standardised)", "lag_z": "Spatial lag of log GDPpc",
+                                    "cluster": "LISA cluster"},
+                            template="plotly_white", opacity=0.7)
+        zmn, zmx = float(esda_df["z"].min()), float(esda_df["z"].max())
+        fig_ms.add_shape(type="line", x0=zmn, y0=G["I"] * zmn, x1=zmx, y1=G["I"] * zmx,
+                         line=dict(color="#1a2b3c", width=2))
+        fig_ms.add_hline(y=0, line=dict(color="#94a3b8", width=1))
+        fig_ms.add_vline(x=0, line=dict(color="#94a3b8", width=1))
+        fig_ms.update_traces(marker=dict(size=6))
+        fig_ms.update_layout(height=470, paper_bgcolor="white", plot_bgcolor="white", font=FONT, hoverlabel=HOVER,
+                             legend=dict(orientation="h", y=-0.22), margin=dict(l=10, r=10, t=10, b=10))
+        st.plotly_chart(fig_ms, use_container_width=True)
+        st.caption("Slope of the black line = Moran's I. Upper-right = High-High, lower-left = Low-Low clusters.")
+    with sc2:
+        st.markdown('<p class="section-title">③ LISA Cluster Map</p>', unsafe_allow_html=True)
+        fig_lisa = px.scatter_mapbox(esda_df, lat="latitude", lon="longitude", color="cluster",
+            color_discrete_map=LISA_COLORS, category_orders={"cluster": order_lisa},
+            mapbox_style="carto-positron", zoom=3.5, center={"lat": -2.2, "lon": 118},
+            hover_name="name_2", hover_data={"name_1": True, "local_I": ":.2f", "p_lisa": ":.3f",
+                                             "latitude": False, "longitude": False},
+            labels={"cluster": "LISA cluster"}, opacity=0.85)
+        fig_lisa.update_traces(marker=dict(size=8))
+        fig_lisa.update_layout(height=470, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor="white",
+                               font=FONT, hoverlabel=HOVER, legend=dict(orientation="h", y=-0.02))
+        st.plotly_chart(fig_lisa, use_container_width=True)
+        st.caption("Significant local clusters (p ≤ 0.05). Red = rich hotspots, blue = poor coldspots.")
+
+    st.markdown("")
+    hc1, hc2 = st.columns([1, 2])
+    with hc1:
+        st.markdown('<p class="section-title">④ Cluster Counts</p>', unsafe_allow_html=True)
+        counts = (esda_df["cluster"].value_counts().reindex(order_lisa).fillna(0).astype(int)).reset_index()
+        counts.columns = ["LISA cluster", "Cells"]
+        counts["% of cells"] = (100 * counts["Cells"] / counts["Cells"].sum()).round(1)
+        st.dataframe(counts, use_container_width=True, height=240, hide_index=True)
+        n_hot = int((esda_df["Gi_z"] >= 1.96).sum())
+        n_cold = int((esda_df["Gi_z"] <= -1.96).sum())
+        st.markdown(f"<small style='color:#6b7c93'>Getis-Ord Gi*: <b>{n_hot:,}</b> hot-spot and "
+                    f"<b>{n_cold:,}</b> cold-spot cells (95%).</small>", unsafe_allow_html=True)
+    with hc2:
+        st.markdown('<p class="section-title">⑤ Getis-Ord Gi* — Hot &amp; Cold Spots</p>', unsafe_allow_html=True)
+        fig_go = px.scatter_mapbox(esda_df, lat="latitude", lon="longitude", color="hotspot",
+            color_discrete_map=HOT_COLORS, category_orders={"hotspot": order_hot},
+            mapbox_style="carto-positron", zoom=3.5, center={"lat": -2.2, "lon": 118},
+            hover_name="name_2", hover_data={"name_1": True, "Gi_z": ":.2f", "latitude": False, "longitude": False},
+            labels={"hotspot": "Gi* class"}, opacity=0.85)
+        fig_go.update_traces(marker=dict(size=8))
+        fig_go.update_layout(height=430, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor="white",
+                             font=FONT, hoverlabel=HOVER, legend=dict(orientation="h", y=-0.03))
+        st.plotly_chart(fig_go, use_container_width=True)
+
+    st.markdown("")
+    st.markdown('<p class="section-title">⑥ Global Moran\'s I Over Time (2012–2022)</p>', unsafe_allow_html=True)
+    st.caption("Is spatial clustering of prosperity strengthening or weakening over the decade?")
+    myr = moran_by_year(k=kk)
+    fig_myr = px.line(myr, x="Year", y="Moran_I", markers=True, template="plotly_white",
+                      color_discrete_sequence=["#0f6b8a"], labels={"Moran_I": "Global Moran's I"})
+    fig_myr.add_hline(y=G["EI"], line=dict(color="#e07a3f", dash="dash"),
+                      annotation_text="E[I] — no autocorrelation", annotation_position="bottom right")
+    fig_myr.update_traces(line_width=2.5, marker_size=8)
+    fig_myr.update_layout(height=360, paper_bgcolor="white", plot_bgcolor="white", font=FONT, hoverlabel=HOVER)
+    st.plotly_chart(fig_myr, use_container_width=True)
 
     st.markdown("---")
     st.markdown("""
